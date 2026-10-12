@@ -4,7 +4,7 @@ import sqlite3
 from contextlib import contextmanager
 from contextvars import ContextVar
 from typing import Any
-from .config import ROOT, config
+from .config import config
 
 _connection: ContextVar[Any | None] = ContextVar("database_connection", default=None)
 
@@ -60,13 +60,5 @@ def transaction():
         connection.close()
 
 def migrate():
-    if not config.database_url:
-        connection = connect()
-        try:
-            connection.execute("PRAGMA journal_mode=WAL")
-        finally:
-            connection.close()
-    with transaction():
-        for statement in (ROOT / "migrations/001_initial.sql").read_text().split(";"):
-            if statement.strip():
-                query(statement)
+    from .schema import upgrade_schema
+    upgrade_schema()
