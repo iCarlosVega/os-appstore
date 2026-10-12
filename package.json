@@ -1,0 +1,34 @@
+{
+  "name": "community-software-store",
+  "version": "0.2.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22.13.0"
+  },
+  "scripts": {
+    "dev": "node scripts/dev.mjs",
+    "build": "next build --webpack",
+    "start": "next start",
+    "typecheck": "tsc --noEmit",
+    "db:migrate": "node scripts/backend.mjs migrate",
+    "jobs": "node scripts/backend.mjs worker",
+    "jobs:once": "node scripts/backend.mjs worker --once",
+    "backup": "node scripts/backend.mjs backup",
+    "dev:web": "next dev",
+    "dev:api": "node scripts/backend.mjs serve --reload",
+    "start:api": "node scripts/backend.mjs serve"
+  },
+  "dependencies": {
+    "next": "https://registry.npmjs.org/next/-/next-16.3.7.tgz",
+    "react": "https://registry.npmjs.org/react/-/react-19.2.8.tgz",
+    "react-dom": "https://registry.npmjs.org/react-dom/-/react-dom-19.2.8.tgz",
+    "zod": "https://registry.npmjs.org/zod/-/zod-4.4.3.tgz"
+  },
+  "devDependencies": {
+    "@types/node": "https://registry.npmjs.org/@types/node/-/node-26.6.3.tgz",
+    "@types/react": "https://registry.npmjs.org/@types/react/-/react-19.2.17.tgz",
+    "@types/react-dom": "https://registry.npmjs.org/@types/react-dom/-/react-dom-19.2.3.tgz",
+    "typescript": "https://registry.npmjs.org/typescript/-/typescript-5.9.3.tgz"
+  }
+}

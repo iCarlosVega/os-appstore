@@ -1,0 +1,72 @@
+x-backend: &backend
+  build:
+    context: .
+    dockerfile: backend/Dockerfile
+    args:
+      POSTGRES_MAJOR: "17"
+  env_file: .env
+  environment:
+    APP_ENV: production
+    DATABASE_URL: postgresql://store:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}@db:5432/store
+    BACKUP_DIR: /app/.data/backups
+    PORT: "8000"
+  restart: unless-stopped
+
+services:
+  db:
+    image: postgres:17-bookworm
+    environment:
+      POSTGRES_USER: store
+      POSTGRES_DB: store
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
+    volumes:
+      - database:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U store -d store"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+    restart: unless-stopped
+  migrate:
+    <<: *backend
+    command: ["python", "-m", "backend.app.cli", "migrate"]
+    restart: "no"
+    depends_on:
+      db:
+        condition: service_healthy
+  api:
+    <<: *backend
+    ports:
+      - "127.0.0.1:8000:8000"
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", "python", "-c", "from urllib.request import urlopen; urlopen('http://127.0.0.1:8000/api/health', timeout=3)"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+  worker:
+    <<: *backend
+    command: ["python", "-m", "backend.app.cli", "worker"]
+    volumes:
+      - backups:/app/.data/backups
+    depends_on:
+      api:
+        condition: service_healthy
+  web:
+    build: .
+    environment:
+      NODE_ENV: production
+      BACKEND_URL: http://api:8000
+      BACKEND_PROXY_SECRET: ${BACKEND_PROXY_SECRET:-}
+    ports:
+      - "127.0.0.1:3000:3000"
+    restart: unless-stopped
+    depends_on:
+      api:
+        condition: service_healthy
+
+volumes:
+  database:
+  backups:

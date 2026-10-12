@@ -1,0 +1,12 @@
+node_modules
+.next
+.data
+.git
+.agents
+.codex
+graft
+.env
+.env.*
+*.tsbuildinfo
+backend/.venv
+**/__pycache__
