@@ -16,6 +16,8 @@ Do not modify store/admin/models, baseline/helper migrations, config, bot/runtim
 
 Two additive tables and one index, durable owner-bound/versioned drafts, explicit required selections, seven-day expiry/renewal, replay-safe approval/rejection through store functions, atomic review/audit/publication, and monotonic scoped polling offsets. No network/config dependence or import-time DB work. Snapshot option indices keep Telegram callback payloads bounded. All existing optional metadata and override semantics survive approval.
 
+Follow the frozen 22-character token representation and decimal grammar, immutable assessment snapshot/ReviewView field, and compare-and-clear `reset_delivery` contract. Distinguish outdated button version from obsolete candidate revision; a button mismatch must not invalidate a current open review.
+
 ## Verification and finish
 
 Use your own virtualenv if dependencies are needed; never copy root env/DB/token or share environments. Authorized checks are compilation, safe imports with DB connections blocked, offline DDL compilation and code review. No tests, migrations, DB connections, services, Telegram/GitHub calls or publication.

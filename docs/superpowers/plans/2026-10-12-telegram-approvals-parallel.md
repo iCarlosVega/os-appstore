@@ -49,6 +49,7 @@ Session 1 defines `ReviewView` as a TypedDict with exactly these keys:
 token: str; repo_id: str; candidate_revision: int; draft_version: int
 status: str; expires_at: str; message_id: str | None; app_slug: str | None
 data: dict  # current Metadata-shaped draft; preserves existing camelCase keys
+assessment: dict  # immutable candidate assessment snapshot, or {} when absent
 options: dict  # categories: [{id: str, name: str}], types: [str], cost_models: [str]
 confirmed: dict  # category, type, cost, safe: bool
 ```
@@ -59,6 +60,7 @@ Review service in `telegram_review.py`, no config/network dependency or import-t
 prepare_reviews(*, owner_user_id: int, chat_id: int, limit: int = 5) -> list[ReviewView]
 get_review(token: str, *, owner_user_id: int, chat_id: int) -> ReviewView
 mark_delivered(token: str, message_id: int, *, owner_user_id: int, chat_id: int) -> None
+reset_delivery(token: str, expected_message_id: int, *, owner_user_id: int, chat_id: int) -> None
 apply_action(token: str, expected_version: int, action: str, value: str | None = None,
              *, owner_user_id: int, chat_id: int) -> dict
 get_offset(poller_key: str) -> int  # zero when absent; next Telegram update ID to request
@@ -66,14 +68,18 @@ advance_offset(poller_key: str, next_update_id: int) -> None  # monotonic, never
 ```
 
 - `prepare_reviews` expires/stales obsolete open drafts, creates new snapshots for eligible pending revisions, and returns at most `limit` unsent open reviews in oldest-candidate order. It can renew expired unchanged revisions with a new token; do not resend marked deliveries every iteration.
+- Snapshot assessment unchanged from the candidate into the spec's TEXT JSON column and expose it through every ReviewView. Use it for uncertainty/evidence display; no controller database queries or guessed enrichment. Tokens are exactly the spec's 22-character `secrets.token_urlsafe(16)` representation. Version starts at 1, never exceeds 2147483647; reject overflow without mutation. Callback decimal grammar is frozen in the spec.
+- `reset_delivery` clears message_id only for an open, owner-bound review whose recorded ID matches `expected_message_id`; otherwise it is a safe no-op. This makes an unavailable card eligible for bounded resend without clearing a newer delivery or resurrecting a terminal review. It uses the same transaction protections as other mutations.
 - Options are snapshots taken when review is created. Sort category options by `(name.lower(), id)`; types use `models.TYPES`; cost models exactly `['Free', 'Free with optional paid features']`. Category/type/cost values are decimal zero-based indices. `safe` accepts only `yes`; `approve` and `reject` require no value. No other actions. All confirmations begin false; each change increments draft version. A select action confirms that field even if the value already matched.
 - `apply_action` returns `{'review': ReviewView, 'outcome': str, 'message': str}`. Outcomes: `updated`, `approved`, `rejected`, `already_done`, `stale`, `expired`, `blocked`. Invalid syntax/action/option, unknown token or wrong identity raises existing `models.InputError` with safe text. Known stale/expired/terminal review returns its outcome without mutating candidates. Final `approved` supplies the link slug through `review['app_slug']`.
+- A mismatched expected draft version returns `stale` and the current ReviewView without changing it; an open current draft remains open. A changed candidate revision/status instead marks the obsolete open review stale. Terminal review checks precede version mismatch so replay returns its durable final result.
 - Existing `db.transaction` is nestable. Controller may wrap a service mutation to assert lease under the same writer lock. Each service also protects its standalone mutations. No Telegram I/O while locked.
 
 Session 2 defines API transport in `telegram_api.py`:
 
 ```python
 class TelegramError(RuntimeError):
+    code: str  # transient | rate_limited | not_modified | callback_expired | message_unavailable | permanent
     retry_after: int | None  # bounded 1..60 if provider asks for retry, otherwise None
 class TelegramClient:
     def __init__(self, token: str): ...  # no network in constructor
@@ -81,7 +87,7 @@ class TelegramClient:
     def close(self) -> None: ...
 ```
 
-`call` accepts only six methods from the spec, POST JSON to the fixed Telegram origin, and returns the validated `result` of an `ok:true` envelope; safe TelegramError for failures. Validate each method's required result shape in transport/controller before use. No root logger configuration at import; never expose URLs/raw provider errors. Runtime suppresses httpx/httpcore logging before first call. Transport must remain safe for ordinary callers too (use a client-specific redacting request logging strategy or establish safe logger behavior before any token-bearing request).
+`call` accepts only six methods from the spec, POST JSON to the fixed Telegram origin, and returns the validated `result` of an `ok:true` envelope; safe TelegramError for failures. Classify network/5xx as transient, 429 as rate_limited, edit "message is not modified" as not_modified, expired/invalid callback query ID as callback_expired, missing/uneditable edit target as message_unavailable, and other permanent API failures as permanent. Classify raw descriptions internally without exposing them. Validate each method's required result shape in transport/controller before use. No root logger configuration at import; never expose URLs/raw provider errors. Runtime suppresses httpx/httpcore logging before first call. Transport must remain safe for ordinary callers too (use a client-specific redacting request logging strategy or establish safe logger behavior before any token-bearing request).
 
 Controller in `telegram_bot.py`:
 
@@ -97,7 +103,11 @@ run_once(client: TelegramClient, *, owner_user_id: int, chat_id: int,
 
 `run_once` sends at most five unsent cards, polls at most 20 updates using saved next-ID offset, validates sender/chat/private context, processes supported commands/callbacks, answers callbacks promptly and edits the message with the returned current review. Stop early on stop/lease loss. Call `assert_active` before external calls and inside DB transactions before mutations/offset writes. Advance offsets only after completed/ignored updates. Malformed authorized input gets safe feedback and no candidate mutation. Failed delivery/API calls raise safe TelegramError; do not advance past an unprocessed update. `/pending` uses the same per-iteration send budget, not an additional unbounded batch. Use text with no parse mode (or correctly escape every untrusted field), plain HTTPS repository URL buttons and bounded/truncated message text within 4096 characters. Link terminal approvals to the configured environment's app URL.
 
+Replay rules: `not_modified` edit is success; `callback_expired` acknowledgement is nonfatal. After a durable action, a `message_unavailable` edit cannot block offset progress: call `reset_delivery` under the guarded transaction for its matching message ID (open reviews only), then finish that update. Terminal state/publication stands and needs no resend. Missing/inaccessible callback messages get safe handling without mutation if private-chat authorization cannot be established. Retry transient/rate_limited errors with the saved offset, relying on durable domain idempotency; never undo a completed action. Other permanent errors propagate to stop runtime safely. This classification prevents an expired acknowledgement or unchanged terminal edit from poisoning the polling loop.
+
 Session 3 adds exact Config attributes from the spec and `telegram_worker.main() -> None`, with module `__main__` guard. Startup order: validate explicit enable/token/IDs; verify required schema using read-only queries (safe actionable migration error); create client; `getMe` to verify numeric bot ID; `getWebhookInfo` and refuse nonempty webhook URL; acquire lease; process loop. No bot requests on safe module import. No schema initialization or destructive webhook calls.
+
+Lease key is exactly `telegram:<bot_id>`; poller_key for offsets is exactly `telegram:<bot_id>:<owner_user_id>:<chat_id>`. Use canonical decimal IDs. Only transient/rate_limited TelegramError codes trigger interruptible retry (retry_after bounded 1..60); unexpected/permanent failures stop with safe text. Controller consumes the nonfatal ack/edit classifications above.
 
 ## Task 1 — Review core and additive persistence
 
