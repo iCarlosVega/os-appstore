@@ -13,9 +13,9 @@ def backup_database():
     temporary = path.with_name(path.name + ".partial")
     try:
         if config.database_url:
-            env = {**os.environ, "PGDATABASE": config.database_url, "PGCONNECT_TIMEOUT": "10"}
+            env = {**os.environ, "PGCONNECT_TIMEOUT": "10"}
             try:
-                subprocess.run(["pg_dump", "--format=custom", "--file", str(temporary)], env=env, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=120, check=True)
+                subprocess.run(["pg_dump", "--dbname", config.database_url, "--format=custom", "--file", str(temporary)], env=env, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=120, check=True)
             except (OSError, subprocess.SubprocessError):
                 raise RuntimeError("Database backup failed. Install pg_dump matching the server and check connectivity.") from None
         else:
