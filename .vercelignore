@@ -1,0 +1,10 @@
+.git/
+.worktrees/
+.data/
+backend/
+migrations/
+docs/
+graft/
+.env
+.env.*
+*.tsbuildinfo
