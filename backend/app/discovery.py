@@ -15,7 +15,7 @@ def daily_count(day):
 def discover(job):
     settings = ready(job)
     if settings is None:
-        return
+        return False
     cats = store.categories()
     progress = dict(job.saved)
     def checkpoint(**changes):
@@ -44,7 +44,7 @@ def discover(job):
         for position in range(collection["index"], len(searches)):
             settings = ready(job)
             if settings is None:
-                return
+                return False
             remaining = min(limit, settings.repositoryLimit) - len(urls)
             if remaining <= 0:
                 checkpoint(incomplete=True, collection={"searches": searches, "index": len(searches)}, coverage=[*progress.get("coverage", []), {"source": "remaining searches", "skipped": len(searches) - position}])
@@ -54,7 +54,7 @@ def discover(job):
             search = searches[position]
             result = github.search_repositories(search, requested)
             if ready(job) is None:
-                return
+                return False
             unique = {url.lower(): url for url in urls}
             for url in result["urls"]:
                 unique.setdefault(url.lower(), url)
@@ -65,7 +65,7 @@ def discover(job):
     for index in range(progress.get("index", 0), len(urls)):
         settings = ready(job)
         if settings is None:
-            return
+            return False
         evaluated = progress.get("evaluated", progress.get("index", 0))
         if evaluated >= min(limit, settings.repositoryLimit):
             checkpoint(evaluationLimitReached=True, incomplete=True)
@@ -79,7 +79,7 @@ def discover(job):
             continue
         settings = ready(job)
         if settings is None:
-            return
+            return False
         if data.repoId in seen:
             checkpoint(index=index + 1)
             continue
@@ -103,7 +103,7 @@ def discover(job):
                 questions["category"] = {"type": "choice", "instructions": policy + "Propose the most suitable software category for owner review.", "criteria": {c["id"]: c["name"] for c in cats}}
             decisions = jev.decide({"repository": data.model_dump(), "absoluteGrowth": absolute_growth, "proportionalGrowth": proportional_growth}, questions, strict=True)
             if ready(job) is None:
-                return
+                return False
             if decisions:
                 if cats:
                     data.categories = [decisions["category"]["choice"]]
@@ -112,7 +112,7 @@ def discover(job):
             job.assert_lease()
             settings = store.get_settings()
             if settings.discoveryPaused or settings.budgetPaused or not config.github_token:
-                return
+                return False
             # Re-read identity/status/quota under the existing shared transaction lock.
             known = db.query("SELECT status FROM candidates WHERE repo_id=$1", [data.repoId])
             listed = bool(db.query("SELECT id FROM apps WHERE repo_id=$1", [data.repoId]))

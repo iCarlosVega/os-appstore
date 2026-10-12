@@ -108,9 +108,9 @@ Next.js needs only **`BACKEND_URL`** and, in production, the shared **`BACKEND_P
 
 ### First collection
 
-Sign in at `/admin`, add official GitHub repository URLs under Settings → Seeds, run the worker, and queue Discovery in Operations. Review Candidates, verify free-use eligibility and licensing, select categories/platforms, record setup/requirements, confirm non-NSFW content, and approve the reviewed revision.
+Sign in at `/admin`, add official GitHub repository URLs under Settings → Seeds, run the worker, and queue Discovery in Operations. Review Candidates, verify free-use eligibility and licensing, select categories/platforms, record setup/requirements, explicitly confirm the selected software type and non-NSFW content, and approve the reviewed revision. The type confirmation is required on listing edits too; a discovered candidate's initial type is not verified evidence.
 
-Owner corrections made during initial approval or later editing are preserved as manual overrides. Repository identity, URL, and license changes become private proposals. Replacement repositories cannot supply new public metadata before identity approval. Rejected repository IDs remain suppressed until explicitly reopened. Missing repositories keep the approved destination with an availability warning; inactive projects are downranked. Descriptions remain upstream or owner-authored.
+Owner corrections made during initial approval or later editing are preserved as manual overrides. Repository identity, URL, license, and supplied cost/category changes become private proposals. Review shows current and proposed eligibility/categories, and approval requires both the proposal and listing revisions to match. Missing cost/category evidence in legacy proposals keeps approved values. The current GitHub adapter does not supply cost/category change evidence; its unknown defaults cannot erase approved values. Replacement repositories cannot supply new public metadata before identity approval. Rejected repository IDs remain suppressed until explicitly reopened. Missing repositories keep the approved destination with an availability warning; inactive projects are downranked. Descriptions remain upstream or owner-authored.
 
 ### Default schedules
 
@@ -132,7 +132,11 @@ The monthly target defaults to **$20** and cannot be raised above it in this ver
 
 Before each paid call, the backend atomically reserves the configured cost of the model's full 65,536-token input window, then settles to valid returned input usage after validating all required decisions. Timed-out or malformed responses retain their reservation until reconciled against provider billing. TypeSafe currently bills input tokens; verify pricing/model assumptions before enabling AI. No separate paid agent provider is included.
 
+The default and `.env.example` pin `TYPESAFE_MODEL=jev-1.13.0`, the model reviewed for this input bound. The adapter also accepts `jev-latest` and `jev-preview`; these aliases can change remotely. Other model identifiers are disabled until their limits are reviewed. Review input limits and your contract's input price before changing versions or using an alias, and keep the configured rate current. Existing `.env` values are preserved, so update an old alias explicitly if you want the pin. Missing usage, malformed decisions, and reported usage beyond the reserved bound retain the full reservation for owner reconciliation rather than being treated as settled billing.
+
 If the target is reached or the next reservation cannot fit, discovery, metadata checks, and paid AI pause and a notification is queued. Browsing, deterministic search, and repository links continue. UTC calendar months define cost periods; a new month does not automatically clear a prior stop. Review costs, clear the budget stop/relevant pause switches, and resume failed jobs explicitly.
+
+Settings saves require the revision shown when the page was opened. If a budget stop or another update occurs meanwhile, reload and review the latest controls before saving; an older form cannot clear that newer stop.
 
 This guard cannot cap hosting invoices, egress, unreported costs, or incorrect provider pricing. Set provider billing limits/alerts separately. Backups and notifications continue as operational work while discovery is paused.
 

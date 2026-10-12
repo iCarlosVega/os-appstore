@@ -1,6 +1,6 @@
 # AI integration: merge and review
 
-Scope: owner-requested step 1 only — merge and review the four AI branches on an integration branch. Shared-code remediation, frontend build gates, deployment, and merging into `main` remain separate steps.
+Scope: initially merge and review the four AI branches on an integration branch. The owner subsequently authorized the confirmed shared-code fixes; those fixes and structural/frontend validation are now complete. Deployment and merging into `main` remain separate actions.
 
 Branch: `ai/integration`.
 Worktree: `/Users/carlosvega/.codex/worktrees/2fe3/os-appstore` (created through the native worktree tool).
@@ -30,9 +30,9 @@ All four merges used `--no-ff` and completed without conflicts. Each branch chan
 
 ## Review and integration requests
 
-Read-only combined review is complete. One independent reviewer inspected the merged production diff, the lane completion notes, the specification, and actual shared consumers. No further confirmed important introduced regression was found beyond the known unfinished integration contracts. The reviewer also identified the separately labeled baseline Settings issue below. All fixes remain outside this merge/review-only step.
+Read-only combined review is complete. One independent reviewer inspected the merged production diff, the lane completion notes, the specification, and actual shared consumers. No further confirmed important introduced regression was found beyond the known unfinished integration contracts. The reviewer also identified the separately labeled baseline Settings issue below. The following findings describe the merged revision before remediation; their resolutions are recorded below.
 
-Important findings to carry into step 2:
+Important findings carried into remediation:
 
 1. **P2, known integration contract — proposal review/application.** Admin review and approval must display and apply cost-model/category proposals, validate categories and publication eligibility, and preserve approved values/overrides. `backend/app/admin.py:180` currently applies source identity/attribution fields only; `src/app/admin/page.tsx:22` displays repository/license changes only. Approving such a proposal would mark it approved without applying those fields. Reachability qualification: today's GitHub adapter supplies unknown cost and empty categories, which maintenance preserves, so this is an unfinished expanded contract rather than a claim that ordinary current GitHub responses already generate these changes.
 2. **P2, known pause contract — interrupted discovery can be marked complete.** Discovery pause/disabled early exits must return the exact value `False`. `backend/app/jobs.py:87` consumes that marker, but discovery currently exits with implicit `None` at lines 18, 47, 57, 68, 82, 106, and 115. A pause followed by unpause before finalization can mark partial discovery complete, preventing its checkpoint from resuming. Retain `None` for ordinary completion.
@@ -52,9 +52,32 @@ Discovery's cross-midnight quota request is resolved by the discovery branch: it
 
 ## Assessment and verification limits
 
-Merge/review step complete; integration is **not ready for `main`** until the shared gaps are resolved. Frontend type checking/build and combined validation remain later plan gates.
+At the initial merge/review stage, integration was not ready for `main` until the shared gaps were resolved. Remediation and frontend gates are now complete as recorded below; owner acceptance remains pending.
 
 The reviewer explicitly declined runtime certification of concurrency, PostgreSQL, crash recovery, DST, live GitHub/Jev schemas, actual billing, webhook delivery, prompt-injection resistance, OAuth, and browser behavior. The executor retains these as unverified requirements/limits rather than silently dropping them or treating structural checks as behavioral proof. No application tests were requested or run.
+
+## Remediation
+
+Authorized follow-up: fix the four confirmed issues and the model configuration recommendation on `ai/integration`, starting from `69cd4b4`.
+
+- Discovery's seven pause/disabled exits now return exact `False`; normal completion still returns `None`. The runner's existing observed-pause marker preserves the interrupted checkpoint after an owner unpauses.
+- Settings submits its rendered revision. The backend compares that revision under the existing transaction lock before applying any fields or pause flags, rejecting stale forms with a reload/review message.
+- Proposal review shows current/proposed free-use eligibility and category names. Approval validates both the proposal revision and the listing revision rendered on the form. It applies cost/categories with source changes through `store.edit_app`, retaining its existing category/publication validation and all unrelated approved fields/overrides. Legacy unknown cost/empty categories retain current values; the UI explicitly describes this behavior.
+- Candidate approval and listing edits require an initially unchecked software-type confirmation, enforced in the browser and backend. This is explicit owner confirmation rather than a new metadata default or persisted schema field; existing Python/TypeScript metadata contracts and stored records remain compatible. Existing listings are not retrospectively certified. Confirmation is required on edits as well as initial approval, following the existing content-confirmation form pattern.
+- Default/example configuration now pins `jev-1.13.0`. README documents supported identifiers, mutable aliases, model-limit/rate review, retained uncertain charges, and the fact that existing explicit environment values are preserved. No credentials or existing `.env` files were changed.
+
+### Follow-up verification and review
+
+- Syntax compilation and safe imports of all eighteen backend modules: passed after the fixes. Confirmed that configuration resolves to this integration worktree and the absent-environment model default is `jev-1.13.0`. Credentials were disabled and the unused SQLite path was isolated; no application functions or database initialization ran.
+- `npm ci --ignore-scripts --no-audit --no-fund`: installed the locked frontend dependencies locally without changing dependency manifests or lockfiles.
+- `NEXT_TELEMETRY_DISABLED=1 BACKEND_URL=http://127.0.0.1:9 GITHUB_TOKEN='' TYPESAFE_API_KEY='' DISCORD_WEBHOOK_URL='' npm run build`: passed, including production compilation, built-in TypeScript validation, static generation, and build traces. Backend-dependent routes remain dynamic; no API server or worker was started.
+- `npm run typecheck`: passed after the build generated the local Next.js types.
+- `git diff --check`: passed after source edits.
+- One follow-up read-only review by the integration reviewer verified all five resolutions and their shared consumers. No confirmed introduced regression or incomplete requested fix was found. No further review or application tests were run.
+
+The explicit source-plan no-application-tests policy continues to govern verification. Syntax/import/build checks and code review do not establish runtime concurrency, billing, crash recovery, live OAuth/provider/webhook behavior, or browser form operation. The current GitHub adapter still does not infer cost/category evidence; no new evidence-extraction feature was added.
+
+Remediation and the permitted structural/frontend gates are complete. The integration branch is preserved for owner acceptance; no merge into `main`, push, deployment, or worktree removal was performed.
 
 ## Preserved state
 

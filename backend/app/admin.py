@@ -15,9 +15,9 @@ class Form:
         return self.fields.get(name, [])
     def flag(self, name):
         return self.get(name) == "on"
-    def revision(self):
+    def revision(self, name="revision"):
         try:
-            value = int(self.get("revision"))
+            value = int(self.get(name))
             if value < 1:
                 raise ValueError()
             return value
@@ -38,6 +38,8 @@ def dollars(value: str, nullable=False):
 def edits(form: Form, original: Metadata) -> Metadata:
     if not form.flag("confirmedSafeContent"):
         raise InputError("Confirm the listing contains no NSFW content.")
+    if not form.flag("confirmedSoftwareType"):
+        raise InputError("Confirm the selected software type is accurate.")
     raw = original.model_dump()
     for key in ("name", "creator", "creatorUrl", "description", "license", "version", "requirements", "setup", "type", "costModel"):
         raw[key] = form.get(key)
@@ -109,6 +111,8 @@ def action(operation: str, fields: dict):
     elif operation == "settings":
         with db.transaction():
             raw = store.get_settings().model_dump()
+            if raw["revision"] != form.revision():
+                raise InputError("Settings changed. Reload and review the latest controls before saving.")
             for key in ("timezone", "discoveryTime", "maintenanceTime", "priorityTime", "digestTime", "backupTime", "donationUrl"):
                 raw[key] = form.get(key)
             for key in ("discoveryPaused", "maintenancePaused", "publicationPaused", "downloadsPaused", "aiPaused", "budgetPaused"):
@@ -176,8 +180,15 @@ def action(operation: str, fields: dict):
                 app = store.find_app(proposal["app_id"])
                 if not app:
                     raise InputError("App unavailable.")
+                if app["revision"] != form.revision("appRevision"):
+                    raise InputError("Listing changed. Reload and review the change proposal again.")
                 fresh = Metadata.model_validate_json(proposal["data"]).model_dump()
-                raw = {**app, **{key: fresh[key] for key in ("repoId", "repoUrl", "license", "creator", "creatorUrl", "sources")}}
+                # Legacy proposals may contain adapter defaults without replacement evidence.
+                if fresh["costModel"] == "Needs review":
+                    fresh["costModel"] = app["costModel"]
+                if not fresh["categories"]:
+                    fresh["categories"] = app["categories"]
+                raw = {**app, **{key: fresh[key] for key in ("repoId", "repoUrl", "license", "creator", "creatorUrl", "sources", "costModel", "categories")}}
                 store.edit_app(app["id"], app["revision"], Metadata.model_validate(raw))
             db.query("UPDATE proposals SET status=$1 WHERE id=$2", ["approved" if decision == "approve" else "rejected", proposal["id"]])
             store.audit("proposal.decided", {"id": proposal["id"], "decision": decision})

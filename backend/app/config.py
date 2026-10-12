@@ -23,7 +23,7 @@ class Config:
     owner_id: str = os.getenv("OWNER_GITHUB_ID", "")
     auth_secret: str = os.getenv("AUTH_SECRET", "")
     typesafe_key: str = os.getenv("TYPESAFE_API_KEY", "")
-    typesafe_model: str = os.getenv("TYPESAFE_MODEL", "jev-latest")
+    typesafe_model: str = os.getenv("TYPESAFE_MODEL", "jev-1.13.0")
     discord_webhook: str = os.getenv("DISCORD_WEBHOOK_URL", "")
     production: bool = os.getenv("APP_ENV", "development") == "production"
     proxy_secret: str = os.getenv("BACKEND_PROXY_SECRET", "")
