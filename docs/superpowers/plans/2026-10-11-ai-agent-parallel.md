@@ -75,42 +75,42 @@ The graph traces discovery and maintenance through `jobs.execute` → `run_due_j
 
 **Files / interfaces:** Session 1 row and shared interfaces above. Original Task 3; spec: Catalog search and Jev / Budget controls.
 
-- [ ] Read the lane handoff and final baseline; identify concrete gaps before editing.
-- [ ] Review response schema, key/type/criteria validation, bounded requests, strict/non-strict errors, and reservation/settlement ordering.
-- [ ] Complete only demonstrated gaps in owned files. Preserve fallback and durable pause behavior.
-- [ ] Review concurrent reservations, timeout/unknown usage, rollover, missing configuration, and overspending paths.
-- [ ] Run owned-file syntax checks and environment-appropriate safe import checks; record exactly what was checked.
-- [ ] Commit owned changes and `docs/superpowers/completions/ai-provider-budget.md`; report no-op if the baseline already satisfies the lane.
+- [x] Read the lane handoff and final baseline; identify concrete gaps before editing.
+- [x] Review response schema, key/type/criteria validation, bounded requests, strict/non-strict errors, and reservation/settlement ordering.
+- [x] Complete only demonstrated gaps in owned files. Preserve fallback and durable pause behavior.
+- [x] Review concurrent reservations, timeout/unknown usage, rollover, missing configuration, and overspending paths.
+- [x] Run owned-file syntax checks and environment-appropriate safe import checks; record exactly what was checked.
+- [x] Commit owned changes and `docs/superpowers/completions/ai-provider-budget.md`; report no-op if the baseline already satisfies the lane.
 
 ## Task 2: Published-catalog search
 
 **Files / interfaces:** Session 2 row and shared interfaces above. Original Task 3; spec: Catalog search and Jev / Visitor experience.
 
-- [ ] Read the lane handoff and baseline; trace public search callers without changing their contracts.
-- [ ] Review published-only retrieval, aliases, typo tolerance, descendant categories, attribute filtering, exact-name precedence, relevance, and inactive penalties.
-- [ ] Complete only demonstrated gaps in owned files; keep the 20-candidate Jev bound and 24-hour revision/model/filter cache.
-- [ ] Review malformed provider decisions, empty queries, unsupported filters, no-match suggestions, and deterministic fallback.
-- [ ] Run syntax/import checks and commit owned changes plus `docs/superpowers/completions/ai-catalog-search.md`.
+- [x] Read the lane handoff and baseline; trace public search callers without changing their contracts.
+- [x] Review published-only retrieval, aliases, typo tolerance, descendant categories, attribute filtering, exact-name precedence, relevance, and inactive penalties.
+- [x] Complete only demonstrated gaps in owned files; keep the 20-candidate Jev bound and 24-hour revision/model/filter cache.
+- [x] Review malformed provider decisions, empty queries, unsupported filters, no-match suggestions, and deterministic fallback.
+- [x] Run syntax/import checks and commit owned changes plus `docs/superpowers/completions/ai-catalog-search.md`.
 
 ## Task 3: GitHub evidence and private discovery
 
 **Files / interfaces:** Session 3 row and shared interfaces above. Original Task 4; spec: Scheduled discovery / Listings and attribution.
 
-- [ ] Read the lane handoff and baseline; trace worker, storage, and maintenance consumers.
-- [ ] Review fixed-host GitHub access, redirects/rate limits, bounded pages/excerpts, stable IDs, releases, provenance, and documented facts.
-- [ ] Complete demonstrated gaps in seed/topic/recent/active collection, deduplication, rejection suppression, checkpoints, and bounded private proposals.
-- [ ] Review default limits of 100 evaluated repositories and 10 additions per day, cross-run/restart enforcement, first observations, uncertain eligibility, and untrusted repository text.
-- [ ] Run syntax/import checks and commit owned changes plus `docs/superpowers/completions/ai-discovery.md`.
+- [x] Read the lane handoff and baseline; trace worker, storage, and maintenance consumers.
+- [x] Review fixed-host GitHub access, redirects/rate limits, bounded pages/excerpts, stable IDs, releases, provenance, and documented facts.
+- [x] Complete demonstrated gaps in seed/topic/recent/active collection, deduplication, rejection suppression, checkpoints, and bounded private proposals.
+- [x] Review default limits of 100 evaluated repositories and 10 additions per day, cross-run/restart enforcement, first observations, uncertain eligibility, and untrusted repository text.
+- [x] Run syntax/import checks and commit owned changes plus `docs/superpowers/completions/ai-discovery.md`.
 
 ## Task 4: Maintenance, durable jobs, and notifications
 
 **Files / interfaces:** Session 4 row and shared interfaces above. Original Task 4; spec: Approval and maintenance / Administration and Discord / Scheduled discovery.
 
-- [ ] Read the lane handoff and baseline; preserve invocation and checkpoint contracts consumed by discovery and the CLI.
-- [ ] Review routine factual refreshes, owner overrides, identity/license/free-use/category proposals, unavailable sources, and inactivity.
-- [ ] Complete demonstrated gaps in leases, local schedule identities, resumable checkpoints, per-job failure pauses, weekly digest, and durable notifications.
-- [ ] Review DST/restarts, lease loss, cross-midnight recovery, explicit resume after budget/failure, and notification failure without recursive alerts.
-- [ ] Run syntax/import checks and commit owned changes plus `docs/superpowers/completions/ai-maintenance-jobs.md`.
+- [x] Read the lane handoff and baseline; preserve invocation and checkpoint contracts consumed by discovery and the CLI.
+- [x] Review routine factual refreshes, owner overrides, identity/license/free-use/category proposals, unavailable sources, and inactivity.
+- [x] Complete demonstrated gaps in leases, local schedule identities, resumable checkpoints, per-job failure pauses, weekly digest, and durable notifications.
+- [x] Review DST/restarts, lease loss, cross-midnight recovery, explicit resume after budget/failure, and notification failure without recursive alerts.
+- [x] Run syntax/import checks and commit owned changes plus `docs/superpowers/completions/ai-maintenance-jobs.md`.
 
 ## Integration after the four sessions
 
@@ -122,7 +122,9 @@ Reuse the migration/orchestration session for integration; a fifth implementatio
 - [x] Verify provider consumers, discovery's JobContext, maintenance's GitHub calls, durable state, admin pause/resume, and unchanged frontend search JSON against the merged code. Verification is code review, not application execution.
 - [x] Run Python syntax/import checks and the migration's TypeScript/build gates. Follow `backend/requirements.txt` in a worktree-local virtualenv; do not share mutable environments between sessions. Do not migrate or run workers against the main checkout's database.
 - [x] Record limits honestly: without requested behavioral tests and live integration access, compilation and review do not prove concurrency, billing, DST, PostgreSQL, OAuth, or provider behavior.
-- [ ] Keep worktrees until the owner accepts integration; do not deploy or delete branches automatically.
+- [x] Keep worktrees until the owner accepts integration; do not deploy or delete branches automatically. All worktrees and branches remain intact; no deployment or cleanup occurred.
+
+Completion status: all four lane implementations and the integration checklist are complete under the stated syntax/import/build/code-review verification policy. The lane checkboxes were reconciled with their committed completion reports and integrated branch tips; they do not claim executable behavioral verification. Final landing into `main` or a pull request remains an owner decision.
 
 Merge/review and remediation record: `docs/superpowers/completions/ai-integration.md`. The four conflict-free merges and shared fixes are on `ai/integration`. Python syntax/imports, frontend type checking/build, and follow-up code review passed. Worktrees remain intact pending owner acceptance; `main` is unchanged. Behavioral and live-service validation remain unverified under the plan's no-application-tests policy.
 

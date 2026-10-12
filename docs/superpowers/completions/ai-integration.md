@@ -79,6 +79,14 @@ The explicit source-plan no-application-tests policy continues to govern verific
 
 Remediation and the permitted structural/frontend gates are complete. The integration branch is preserved for owner acceptance; no merge into `main`, push, deployment, or worktree removal was performed.
 
+## Remaining-step closeout
+
+On the owner's request to continue the remaining steps, reconciled the plan with the already completed implementation rather than repeating changes or inventing new scope. Steps 2–4 (shared fixes, provider configuration/documentation, and combined structural/frontend validation) were completed in `7ed321b`. Step 5's verification-limit record is complete above; final landing/acceptance remains an owner decision.
+
+Fresh closeout inspection confirmed all four recorded lane tips are ancestors of integration, all completion notes are present, and production/config/frontend/dependency files still match reviewed and validated `7ed321b` exactly. No new application code or checks requiring application execution were introduced. Updated all twenty-one lane checklist entries from their committed reports and checked the worktree-preservation item; the implementation and integration checklist now reflects the completed work.
+
+No remaining code blocker was identified by the completed follow-up review. The unresolved items are runtime/live-service validation listed above and the owner's choice of local merge, pull request, or keeping the branch. None is silently treated as executed, verified, or accepted. The no-application-tests policy remains in effect.
+
 ## Preserved state
 
 `main` and the four implementation branches remain unchanged. The main checkout's existing local `next-env.d.ts` change was not copied into integration. No push, deployment, branch deletion, or worktree cleanup was performed.
