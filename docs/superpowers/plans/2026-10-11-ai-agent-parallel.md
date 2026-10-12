@@ -124,9 +124,9 @@ Reuse the migration/orchestration session for integration; a fifth implementatio
 - [x] Record limits honestly: without requested behavioral tests and live integration access, compilation and review do not prove concurrency, billing, DST, PostgreSQL, OAuth, or provider behavior.
 - [x] Keep worktrees until the owner accepts integration; do not deploy or delete branches automatically. All worktrees and branches remain intact; no deployment or cleanup occurred.
 
-Completion status: all four lane implementations and the integration checklist are complete under the stated syntax/import/build/code-review verification policy. The lane checkboxes were reconciled with their committed completion reports and integrated branch tips; they do not claim executable behavioral verification. Final landing into `main` or a pull request remains an owner decision.
+Completion status: all four lane implementations and the integration checklist are complete under the stated syntax/import/build/code-review verification policy. The lane checkboxes were reconciled with their committed completion reports and integrated branch tips; they do not claim executable behavioral verification. The owner selected local landing, and `main` fast-forwarded to `c899fd2` without conflicts.
 
-Merge/review and remediation record: `docs/superpowers/completions/ai-integration.md`. The four conflict-free merges and shared fixes are on `ai/integration`. Python syntax/imports, frontend type checking/build, and follow-up code review passed. Worktrees remain intact pending owner acceptance; `main` is unchanged. Behavioral and live-service validation remain unverified under the plan's no-application-tests policy.
+Merge/review, remediation, and local-landing record: `docs/superpowers/completions/ai-integration.md`. The four conflict-free merges and shared fixes are now on local `main`. Post-merge Python syntax/imports and frontend type checking/build passed. All branches/worktrees and the main checkout's existing local `next-env.d.ts` change remain intact; no push or deployment occurred. Behavioral and live-service validation remain unverified under the plan's no-application-tests policy.
 
 ## Launch prompt
 

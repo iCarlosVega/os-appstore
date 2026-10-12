@@ -1,5 +1,7 @@
 # AI integration: merge and review
 
+Current status: the owner selected local merge into `main`. `main` fast-forwarded from `3da8229` to reviewed integration commit `c899fd2` without conflicts. The earlier pending-acceptance/unchanged-main statements below describe their respective historical stages; the final landing record supersedes them.
+
 Scope: initially merge and review the four AI branches on an integration branch. The owner subsequently authorized the confirmed shared-code fixes; those fixes and structural/frontend validation are now complete. Deployment and merging into `main` remain separate actions.
 
 Branch: `ai/integration`.
@@ -90,3 +92,11 @@ No remaining code blocker was identified by the completed follow-up review. The 
 ## Preserved state
 
 `main` and the four implementation branches remain unchanged. The main checkout's existing local `next-env.d.ts` change was not copied into integration. No push, deployment, branch deletion, or worktree cleanup was performed.
+
+## Local landing
+
+The owner explicitly selected option 1, merge locally into `main`. `git merge --ff-only ai/integration` succeeded on the main checkout and retained all four lane merge commits. No remote was configured, so no pull or push was performed.
+
+After landing, all eighteen backend modules compiled and safely imported from the main checkout with credentials disabled and an isolated unused database path. Main and integration pointed to the identical committed tree. The frontend production build and explicit type check passed in the integration worktree at that same revision, keeping the main checkout's local generated `next-env.d.ts` untouched. No application tests, database initialization/migrations, workers, or live services ran.
+
+The original main-checkout `next-env.d.ts` modification is preserved byte-for-byte (SHA-256 `0f70629890b72a0a82e91972cc032c04b658b26c265373cb711cf576bfbf8fcc`). All implementation branches and worktrees are retained. Only this landing record and the plan status were added after the accepted source revision; no application code changed during landing. Runtime and live-service verification limits remain as recorded above.
