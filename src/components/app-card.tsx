@@ -1,9 +1,10 @@
 import Link from "next/link";
 import type { App } from "@/lib/model";
+import { AppIcon } from "./app-icon";
 
 export function AppCard({ app }: { app: App }) {
   return <article className="card app-card">
-    <div className="row between"><span className="app-mark" aria-hidden="true">{app.name.slice(0, 2).toUpperCase()}</span><span className="project-source">github.com <span aria-hidden="true">↗</span></span></div>
+    <div className="row between"><AppIcon repoId={app.repoId} name={app.name} /><span className="project-source">github.com <span aria-hidden="true">↗</span></span></div>
     <h2><Link href={`/apps/${app.slug}`}>{app.name}</Link></h2>
     <span className="creator">By {app.creator}</span>
     <p className="app-description">{app.description || "See the project's documentation for details."}</p>
