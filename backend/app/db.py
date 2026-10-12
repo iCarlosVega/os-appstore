@@ -7,12 +7,36 @@ from typing import Any
 from .config import config
 
 _connection: ContextVar[Any | None] = ContextVar("database_connection", default=None)
+_operation_timeout: ContextVar[int | None] = ContextVar("database_operation_timeout", default=None)
+
+@contextmanager
+def operation_timeout(milliseconds: int):
+    """Bound SQL on newly opened PostgreSQL connections in this context only."""
+    if type(milliseconds) is not int or not 1 <= milliseconds <= 60000:
+        raise ValueError("Database operation timeout must be between 1 and 60000 milliseconds.")
+    token = _operation_timeout.set(milliseconds)
+    try:
+        yield
+    finally:
+        _operation_timeout.reset(token)
 
 def connect():
     if config.database_url:
         import psycopg
         from psycopg.rows import dict_row
-        return psycopg.connect(config.database_url, autocommit=True, row_factory=dict_row, connect_timeout=10)
+        connection = psycopg.connect(config.database_url, autocommit=True, row_factory=dict_row, connect_timeout=10)
+        timeout = _operation_timeout.get()
+        if timeout is not None:
+            try:
+                # Preserve URL/service/PGOPTIONS settings such as search_path.
+                connection.execute(
+                    "SELECT set_config('statement_timeout', %s, false), set_config('lock_timeout', %s, false)",
+                    (str(timeout), str(timeout)),
+                )
+            except BaseException:
+                connection.close()
+                raise
+        return connection
     if config.production and not os.getenv("SQLITE_PATH"):
         raise RuntimeError("Configure DATABASE_URL or an explicit persistent SQLITE_PATH in production.")
     config.sqlite_path.parent.mkdir(parents=True, exist_ok=True)

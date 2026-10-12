@@ -14,6 +14,7 @@ from uuid import uuid4
 MAX_ID = (1 << 52) - 1
 LEASE_SECONDS = 90
 HEARTBEAT_SECONDS = 20
+DATABASE_TIMEOUT_MS = 10000
 
 
 class WorkerError(RuntimeError):
@@ -113,6 +114,11 @@ class PollerLease:
             raise WorkerError("Telegram lease expired or changed owner. Worker stopped; review other consumers before restarting.")
 
     def _heartbeat(self):
+        # ContextVars are thread-local; explicitly bound this thread's connections too.
+        with self.db.operation_timeout(DATABASE_TIMEOUT_MS):
+            self._renew_loop()
+
+    def _renew_loop(self):
         while not self.heartbeat_stop.wait(HEARTBEAT_SECONDS):
             try:
                 with self.db.transaction():
@@ -253,9 +259,12 @@ def main() -> None:
         except Exception:
             raise WorkerError("Telegram configuration could not be loaded. Check the intended environment; local mode requires the guarded absolute STORE_ENV_FILE and dedicated PostgreSQL configuration.") from None
         token, owner_user_id, chat_id = _configuration(config)
+        from . import db
         for sig in (signal.SIGINT, signal.SIGTERM):
             handlers[sig] = signal.signal(sig, lambda *_: stopping.set())
-        _run(config, token, owner_user_id, chat_id, args.once, stopping)
+        # Apply before readiness queries, lease acquisition and controller work.
+        with db.operation_timeout(DATABASE_TIMEOUT_MS):
+            _run(config, token, owner_user_id, chat_id, args.once, stopping)
     except WorkerStopped:
         pass
     except WorkerError as error:
