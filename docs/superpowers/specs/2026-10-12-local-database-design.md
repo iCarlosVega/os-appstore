@@ -1,6 +1,6 @@
 # Local PostgreSQL development and catalog snapshot
 
-Status: owner approved the local-database approach in conversation and requested an implementation plan and parallel worktrees. This document records that scope; implementation has not started.
+Status: all three implementation lanes are complete and integrated on `local-db/integration`. Static checks, build/typecheck and independent code review passed. Local activation, database behavioral validation and landing on `develop` remain pending; see `docs/superpowers/completions/local-db-integration.md`.
 
 ## Outcome
 
