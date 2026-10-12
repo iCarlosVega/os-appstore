@@ -5,7 +5,7 @@ import re
 import threading
 import unicodedata
 from collections.abc import Callable
-from urllib.parse import quote, urlsplit
+from urllib.parse import urlsplit
 
 from . import db, telegram_review as reviews
 from .models import InputError, repository_url
@@ -17,10 +17,9 @@ _POSITIVE = re.compile(r"[1-9][0-9]{0,9}", re.ASCII)
 _INDEX = re.compile(r"0|[1-9][0-9]{0,9}", re.ASCII)
 _MAX_VERSION = 2147483647
 _HELP = (
-    "Select a category, software type and free-use status on each review card; "
-    "confirm non-NSFW content, review the versioned summary, then explicitly publish or reject. "
-    "Suggestions need your confirmation. /pending delivers up to five unsent reviews per iteration. "
-    "/start and /help show these instructions. GitHub sign-in is not required."
+    "Accept publishes an app using its suggested category and metadata. Reject dismisses it. "
+    "More shows the full details. Open repo opens GitHub. "
+    "/pending delivers unsent reviews; /help shows these instructions."
 )
 
 
@@ -53,7 +52,7 @@ def _parse_callback(data: object) -> tuple[str, int, str, str | None]:
     elif action == "safe":
         valid = value == "yes"
     else:
-        valid = action in ("approve", "reject") and value is None
+        valid = action in ("approve", "accept", "reject", "more") and value is None
     if not valid:
         raise InputError("Invalid review choice. Use the current card.")
     return parts[1], int(parts[2]), action, value
@@ -83,77 +82,59 @@ def _app_base(value: str) -> str:
     return value.rstrip("/")
 
 
-def render_review(review: ReviewView, *, app_url: str, environment: str) -> dict:
+def render_review(review: ReviewView, *, app_url: str, environment: str, expanded: bool = False) -> dict:
     app_url = _app_base(app_url)
-    data, confirmed, options = review["data"], review["confirmed"], review["options"]
     if not _TOKEN.fullmatch(review["token"]) or not _int(review["draft_version"], 1, _MAX_VERSION):
         raise ValueError("Invalid stored Telegram review identity.")
-    names = {option["id"]: option["name"] for option in options["categories"]}
-    categories = ", ".join(str(names.get(value, value)) for value in data.get("categories", [])) or "unselected"
-    platforms = ", ".join(data.get("platforms", [])) or "unknown"
-    assessment = json.dumps(review["assessment"], ensure_ascii=False, separators=(",", ":"))
-    status = review["status"]
-    lines = [
-        f"[{_text(environment, 48)}] Candidate review — {_text(status, 20)}",
-        f"Name: {_text(data.get('name'), 160)}",
-        f"Repository ID: {_text(review['repo_id'], 32)} · revision {review['candidate_revision']} · draft {review['draft_version']}",
-        f"Description (repository text): {_text(data.get('description'), 650) or 'unknown'}",
-        f"Repository: {_text(data.get('repoUrl'), 300)}",
-        f"License: {_text(data.get('license'), 140) or 'unknown'}",
-        f"Platforms: {_text(platforms, 100)}",
-        f"Activity: {_text(data.get('lastActivity'), 100) or 'unknown'} · {_text(data.get('condition'), 40)}",
-        f"Archived: {'yes' if data.get('archived') else 'no'} · stars: {_text(data.get('stars'), 24)}",
-        f"NSFW flag: {'YES — publication blocked' if data.get('nsfw') else 'no'}",
-        f"Assessment / uncertainty (snapshot): {_text(assessment, 600)}",
-        "Current publication summary:",
-        f"Category: {_text(categories, 160)} · {'confirmed' if confirmed.get('category') else 'select to confirm'}",
-        f"Type: {_text(data.get('type'), 80)} · {'confirmed' if confirmed.get('type') else 'select to confirm'}",
-        f"Free use: {_text(data.get('costModel'), 80)} · {'confirmed' if confirmed.get('cost') else 'select to confirm'}",
-        f"Non-NSFW: {'confirmed' if confirmed.get('safe') else 'owner confirmation required'}",
-        f"Expires: {_text(review['expires_at'], 40)}",
-        "Repository text and assessment are untrusted; buttons below control this review.",
-    ]
+    data = review["data"]
+    description = _text(data.get("description") or "No description available.", 4000)
+    sentences = re.split(r"(?<=[.!?])\s+|(?<=[。！？])\s*", description)
+    summary = " ".join(sentence for sentence in sentences[:3] if sentence)
+    lines = [_text(data.get("name"), 160), "", _text(summary, 600)]
+    names = {c["id"]: c["name"] for c in review["options"]["categories"]}
+    categories = ", ".join(names[c] for c in data.get("categories", []) if c in names)
+    metadata = []
+    if categories:
+        metadata.append(f"Category: {_text(categories, 160)}")
+    # GitHub collection defaults to Desktop app without verifying software type.
+    software_type = data.get("type")
+    if software_type and (software_type != "Desktop app" or review["confirmed"].get("type")
+                          or "type" in data.get("overrides", [])):
+        metadata.append(f"Type: {_text(software_type, 80)}")
+    if data.get("platforms"):
+        metadata.append(f"Platforms: {_text(', '.join(data['platforms']), 100)}")
+    if data.get("costModel") in ("Free", "Free with optional paid features"):
+        metadata.append(f"Cost: {_text(data['costModel'], 80)}")
+    if data.get("license") and data["license"].lower() not in ("unknown", "none", "noassertion"):
+        metadata.append(f"License: {_text(data['license'], 140)}")
+    if metadata:
+        lines.extend(["", *metadata])
+    if expanded:
+        names = {c["id"]: c["name"] for c in review["options"]["categories"]}
+        categories = ", ".join(names.get(c, c) for c in data.get("categories", [])) or "Unassigned"
+        lines = [lines[0], "", _text(description, 1200), "",
+                 f"Category: {_text(categories, 160)}",
+                 f"Type: {_text(data.get('type'), 80)}",
+                 f"Free use: {_text(data.get('costModel'), 80)}",
+                 f"License: {_text(data.get('license') or 'Unknown', 140)}",
+                 f"Platforms: {_text(', '.join(data.get('platforms', [])) or 'Unknown', 100)}",
+                 f"NSFW: {'yes — publication blocked' if data.get('nsfw') else 'no'}",
+                 f"Assessment: {_text(json.dumps(review['assessment'], ensure_ascii=False), 600)}",
+                 f"Store: {_text(environment, 48)}"]
     keyboard = []
     try:
         repo_url = repository_url(data.get("repoUrl", ""))
     except (InputError, ValueError, TypeError):
         repo_url = None
     if repo_url:
-        keyboard.append([{"text": "Open repository", "url": repo_url}])
-    if status == "open":
-        # shortcut: show at most 60 categories; add versioned pagination if the catalog outgrows this.
-        for action, key, prefix in (("category", "categories", "Category"), ("type", "types", "Type"), ("cost", "cost_models", "Cost")):
-            limit = 60 if action == "category" else 12
-            for index, option in enumerate(options[key][:limit]):
-                label = option["name"] if action == "category" else option
-                keyboard.append([_button(review, f"{prefix}: {label}", action, str(index))])
-            if len(options[key]) > limit:
-                lines.append(f"{prefix} choices limited to the first {limit} snapshot options.")
-        if not data.get("nsfw"):
-            keyboard.append([_button(review, "Confirm non-NSFW content", "safe", "yes")])
-        if all(confirmed.get(field) is True for field in ("category", "type", "cost", "safe")) and not data.get("nsfw"):
-            lines.append(f"Confirm publication of the summary above for draft {review['draft_version']}. Editing a choice invalidates this confirmation.")
-            keyboard.append([_button(review, f"Confirm & publish draft {review['draft_version']}", "approve")])
-        else:
-            lines.append("Select and confirm every required field to reveal the final publish button.")
-        keyboard.append([_button(review, "Reject candidate", "reject")])
-    elif status == "approved":
-        lines.append("Published. This review is final.")
-        slug = review.get("app_slug")
-        if isinstance(slug, str) and 1 <= len(slug) <= 200:
-            link = f"{app_url}/apps/{quote(slug, safe='')}"
-            lines.append(f"App: {_text(link, 300)} (full link below)")
-            keyboard.append([{"text": "View published app", "url": link}])
-    elif status == "rejected":
-        lines.append("Rejected. This review is final.")
+        keyboard.append([{"text": "Open repo", "url": repo_url}])
+    if review["status"] == "open":
+        keyboard.append([_button(review, "Accept", "accept"), _button(review, "Reject", "reject")])
+        keyboard.append([_button(review, "More", "more")])
     else:
-        lines.append("This review is unavailable. /pending requests current unsent reviews.")
-    # Reserve room for callback outcome feedback, including astral characters.
-    text = "\n".join(lines)
-    encoded = text.encode("utf-16-le")
-    if len(encoded) > 3800 * 2:
-        text = encoded[:3799 * 2].decode("utf-16-le", errors="ignore") + "…"
-    return {"text": text, "reply_markup": {"inline_keyboard": keyboard}}
+        lines.append({"approved": "Accepted and published.", "rejected": "Rejected."}.get(
+            review["status"], "Review unavailable. Use /pending for current reviews."))
+    return {"text": "\n".join(lines), "reply_markup": {"inline_keyboard": keyboard}}
 
 
 def _authorized(sender: object, message: object, owner_user_id: int, chat_id: int) -> bool:
@@ -256,7 +237,7 @@ def run_once(client: TelegramClient, *, owner_user_id: int, chat_id: int,
             send("Review choice unavailable or invalid. Use the current card or /pending.")
             return
         current = result["review"]
-        payload = render_review(current, app_url=app_url, environment=environment)
+        payload = render_review(current, app_url=app_url, environment=environment, expanded=action == "more")
         feedback = {
             "updated": "Choice confirmed. Review the current summary.",
             "approved": "Published. This review is final.",
@@ -264,9 +245,11 @@ def run_once(client: TelegramClient, *, owner_user_id: int, chat_id: int,
             "already_done": "This review already has its final outcome.",
             "stale": "Review changed. Check the current summary before choosing again.",
             "expired": "Review expired. Use /pending for current reviews.",
-            "blocked": "Publication blocked. Check required confirmations, NSFW flag and publication settings.",
+            "blocked": result["message"],
+            "details": "",
         }.get(result["outcome"], "Use the current review card.")
-        payload["text"] += f"\n{feedback}"
+        if feedback:
+            payload["text"] += f"\n{feedback}"
         try:
             call("editMessageText", {**payload, "chat_id": chat_id, "message_id": message["message_id"],
                                      "link_preview_options": {"is_disabled": True}})
