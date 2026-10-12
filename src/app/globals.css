@@ -57,7 +57,7 @@ h3 { margin: .3rem 0; }
 .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 260px), 1fr)); gap: 1rem; }
 .card, .panel { background: var(--paper); border: 1px solid var(--line); border-radius: 9px; padding: 1.3rem; }
 .card { display: flex; flex-direction: column; gap: .5rem; }
-.app-card { padding: 1.1rem; transition: border-color .15s, box-shadow .15s; }
+.app-card { padding: 1.1rem; text-decoration: none; transition: border-color .15s, box-shadow .15s; }
 .app-card:hover { border-color: #a1a1aa; box-shadow: 0 2px 8px #00000005; }
 .app-mark { display: inline-flex; width: 48px; height: 48px; flex-shrink: 0; align-items: center; justify-content: center; background: var(--wash); border: 1px solid var(--line); border-radius: 8px; font-size: 12px; font-weight: 650; letter-spacing: -.04em; }
 .app-mark-large { width: 80px; height: 80px; border-radius: 16px; font-size: 24px; }
@@ -65,8 +65,7 @@ h3 { margin: .3rem 0; }
 .app-mark img { display: block; width: 100%; height: 100%; object-fit: contain; }
 .project-source { font-size: 10px; color: var(--muted); }
 .card h2 { margin: .4rem 0 0; font-size: 16px; }
-.card h2 a { text-decoration: none; }
-.card h2 a:hover { text-decoration: underline; }
+.app-card:hover h2 { text-decoration: underline; }
 .creator { color: var(--muted); font-size: 11px; }
 .card p { margin: 0; }
 .app-description { color: var(--muted); font-size: 12px; line-height: 1.7; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
@@ -113,6 +112,7 @@ form.inline { display: inline-block; margin: .2rem; }
 footer { border-top: 1px solid var(--line); font-size: 11px; }
 @media (max-width: 1000px) { .directory { gap: 1.75rem; grid-template-columns: 185px minmax(0,1fr); } .site-header, main, footer { padding-left: 1.5rem; padding-right: 1.5rem; } }
 @media (max-width: 700px) { .directory { grid-template-columns: 1fr; gap: 1.5rem; } .filter-sidebar { border-right: 0; border-bottom: 1px solid var(--line); padding: 0 0 1rem; } .filter-group { display: inline-block; vertical-align: top; width: 100%; padding: .65rem 0; } .filter-group:not(:first-of-type) { width: calc(33.333% - .4rem); margin-right: .4rem; } .categories { flex-direction: row; flex-wrap: wrap; gap: .2rem; } .categories a { font-size: 11px; } .sidebar-note { display: none; } .columns { grid-template-columns: 1fr; } .detail dl { grid-template-columns: 1fr; gap: .3rem; } .detail dd { margin-bottom: 1rem; } .site-header nav { gap: .8rem; } .site-header nav a { font-size: 11px; } .site-header, main, footer { padding-left: 1rem; padding-right: 1rem; } main { padding-top: 1.5rem; } }
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
 
 .download-panel { margin: 1.5rem 0 2rem; }
 .download-row { display: flex; align-items: center; gap: 1rem; flex-wrap: wrap; }
@@ -153,4 +153,3 @@ footer { border-top: 1px solid var(--line); font-size: 11px; }
 .readme td, .readme th { padding: .8rem; }
 .readme details { padding: .75rem 1rem; border: 1px solid var(--line); border-radius: 7px; }
 .readme input[type=checkbox] { width: auto; }
-@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
