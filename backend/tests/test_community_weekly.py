@@ -380,6 +380,44 @@ class DatabaseCases:
         self.assertEqual(db.query("SELECT status FROM jobs WHERE id='community:2026-10-05'")[0]['status'], 'complete')
         self.assertEqual(len(store.candidates()), 10)
 
+    def test_superseded_unfrozen_jobs_skip_all_recoverable_statuses(self):
+        old = [('community:2026-09-07', 'queued', '{}'),
+               ('community:2026-09-14', 'running', '{}'),
+               ('community:2026-09-21', 'paused', '{}'),
+               ('community:2026-09-28', 'paused', store.encode({
+                   'weekStart': '2026-09-28', 'cutoff': '2026-10-05T04:00:00.000Z'}))]
+        for job_id, status, checkpoint in old:
+            db.query("INSERT INTO jobs(id,kind,status,checkpoint,started_at) VALUES($1,'community',$2,$3,$4)", [job_id, status, checkpoint, '2026-10-01T12:00:00.000Z'])
+        db.query("INSERT INTO leases(id,owner,expires_at) VALUES('community','crashed-worker','2026-10-01T12:00:00.000Z')")
+        with patch.object(jobs, 'execute') as execute, patch.object(budget, 'enforce'):
+            jobs.run_due_jobs()
+        for job_id, _, _ in old:
+            self.assertEqual(db.query('SELECT status FROM jobs WHERE id=$1', [job_id])[0]['status'], 'skipped')
+        community_calls = [call.args[0] for call in execute.call_args_list if call.args[1] == 'community']
+        self.assertEqual(community_calls, ['community:2026-10-05'])
+
+    def test_superseded_unfrozen_job_with_live_lease_is_preserved(self):
+        old = self.job('community:2026-09-28', owner='live-worker')
+        with patch.object(jobs, 'execute') as execute, patch.object(budget, 'enforce'):
+            jobs.run_due_jobs()
+        self.assertEqual(db.query('SELECT status,checkpoint FROM jobs WHERE id=$1', [old.id])[0],
+                         {'status': 'running', 'checkpoint': '{}'})
+        self.assertFalse(any(call.args[0] == old.id for call in execute.call_args_list))
+        self.assertEqual(db.query("SELECT owner FROM leases WHERE id='community'")[0]['owner'], 'live-worker')
+
+    def test_superseded_frozen_paused_batch_is_preserved(self):
+        old = self.job('community:2026-09-28')
+        with patch.object(github, 'fetch_repository', side_effect=github.GithubError('Transient')):
+            with self.assertRaises(RuntimeError): self.promote(old)
+        checkpoint = db.query('SELECT checkpoint FROM jobs WHERE id=$1', [old.id])[0]['checkpoint']
+        db.query("UPDATE jobs SET status='paused' WHERE id=$1", [old.id])
+        db.query("DELETE FROM leases WHERE id='community'")
+        with patch.object(jobs, 'execute') as execute, patch.object(budget, 'enforce'):
+            jobs.run_due_jobs()
+        self.assertEqual(db.query('SELECT status,checkpoint FROM jobs WHERE id=$1', [old.id])[0],
+                         {'status': 'paused', 'checkpoint': checkpoint})
+        self.assertTrue(any(call.args[0] == old.id for call in execute.call_args_list))
+
     def test_second_worker_does_not_take_live_lease(self):
         self.job(owner='running-worker')
         jobs.execute('community:2026-10-05', 'community', '2026-10-13')
@@ -411,6 +449,25 @@ class DatabaseCases:
         jobs.execute(manual, 'community', '2026-10-20')
         self.assertEqual(len(store.candidates()), 10)
         self.assertEqual(self.rank_cutoffs, ['2026-10-12T04:00:00.000Z'])
+
+    def test_failure_before_snapshot_retries_original_cutoff_next_week(self):
+        original = 'community:2026-10-05'
+        with patch.object(self.seam, 'rank_pending', side_effect=RuntimeError('Ranking unavailable')), patch.object(jobs.logger, 'exception'):
+            jobs.execute(original, 'community', '2026-10-13')
+        row = db.query('SELECT status,checkpoint FROM jobs WHERE id=$1', [original])[0]
+        self.assertEqual(row['status'], 'failed')
+        # Reproduce admin's retry: copy the failed checkpoint into a manual alias.
+        manual = 'community:manual:' + str(uuid4())
+        db.query("INSERT INTO jobs(id,kind,status,checkpoint,started_at) VALUES($1,'community','queued',$2,$3)", [manual, row['checkpoint'], NOW])
+        db.query("UPDATE jobs SET status='resumed' WHERE id=$1", [original])
+        self.pause(failedKinds=[], timezone='UTC')
+        later = datetime(2026, 10, 20, 16, tzinfo=UTC)
+        with patch.object(jobs, 'datetime') as clock, patch.object(store, 'now', return_value='2026-10-20T16:00:00.000Z'):
+            clock.now.side_effect = lambda tz=None: later.astimezone(tz or UTC)
+            jobs.execute(manual, 'community', '2026-10-20')
+        self.assertEqual(self.rank_cutoffs, ['2026-10-12T04:00:00.000Z'])
+        self.assertEqual(db.query('SELECT status FROM jobs WHERE id=$1', [original])[0]['status'], 'complete')
+        self.assertEqual(len(store.candidates()), 10)
 
     def test_six_failed_kinds_are_supported(self):
         self.pause(failedKinds=['discovery', 'maintenance', 'priority', 'digest', 'backup', 'community'])

@@ -56,9 +56,15 @@ def _progress(job: "JobContext", community_requests) -> dict | None:
         if not match:
             raise RuntimeError("Community jobs require a canonical weekly ID.")
         week = week_context(match[1], store.get_settings().timezone)
+        initial = not job.saved or set(job.saved) == {"weekStart", "cutoff"}
+        if initial and job.saved:
+            cutoff = datetime.fromisoformat(job.saved["cutoff"].replace("Z", "+00:00"))
+            if job.saved["weekStart"] != match[1] or cutoff.utcoffset() != timedelta(0):
+                raise RuntimeError("Community retry identity is invalid. Review before resuming.")
+            week["cutoff"], week["dueAt"] = job.saved["cutoff"], _timestamp(cutoff + timedelta(minutes=5))
         if store.now() < week["dueAt"]:
             return None
-        if not job.saved:
+        if initial:
             ranked = community_requests.rank_pending(cutoff=week["cutoff"], limit=30)
             progress = {"version": 1, "weekStart": week["weekStart"], "cutoff": week["cutoff"],
                         "ranked": ranked[:30], "index": 0, "promotedRepoIds": [], "skipped": []}
@@ -86,7 +92,7 @@ def _progress(job: "JobContext", community_requests) -> dict | None:
         cutoff = datetime.fromisoformat(progress.get("cutoff", "").replace("Z", "+00:00"))
         if cutoff.utcoffset() != timedelta(0):
             raise RuntimeError("Community cutoff must be UTC.")
-        if not job.saved:
+        if initial:
             job.checkpoint(progress)
         return progress
 

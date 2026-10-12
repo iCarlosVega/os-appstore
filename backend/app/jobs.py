@@ -88,7 +88,11 @@ def execute(job_id, kind, local_day):
             return
         db.query("INSERT INTO leases(id,owner,expires_at) VALUES($1,$2,$3) ON CONFLICT(id) DO UPDATE SET owner=excluded.owner,expires_at=excluded.expires_at", [lease_id, owner, future(120)])
         saved = rows[0]["checkpoint"] if rows else "{}"
-        db.query("INSERT INTO jobs(id,kind,status,checkpoint,started_at) VALUES($1,$2,'running','{}',$3) ON CONFLICT(id) DO UPDATE SET status='running',error=NULL,finished_at=NULL", [job_id, kind, store.now()])
+        if kind == "community" and saved == "{}" and re.fullmatch(r"community:\d{4}-\d{2}-\d{2}", job_id):
+            week = week_context(job_id.removeprefix("community:"), store.get_settings().timezone)
+            # Keep retry identity/cutoff even if ranking fails before its snapshot.
+            saved = store.encode({key: week[key] for key in ("weekStart", "cutoff")})
+        db.query("INSERT INTO jobs(id,kind,status,checkpoint,started_at) VALUES($1,$2,'running',$3,$4) ON CONFLICT(id) DO UPDATE SET status='running',checkpoint=excluded.checkpoint,error=NULL,finished_at=NULL", [job_id, kind, saved, store.now()])
     job = JobContext(job_id, lease_id, owner, local_day, {})
     stop = threading.Event()
     def heartbeat():
@@ -166,11 +170,28 @@ def run_due_jobs():
         current = store.get_settings()
         if _blocked(kind, current):
             continue
-        obsolete_community = (kind == "community" and row["id"] != community_id
-                              and re.fullmatch(r"community:\d{4}-\d{2}-\d{2}", row["id"])
-                              and row["checkpoint"] == "{}")
+        obsolete_community = (kind == "community" and row["id"] < community_id
+                              and re.fullmatch(r"community:\d{4}-\d{2}-\d{2}", row["id"]))
+        if obsolete_community:
+            with db.transaction():
+                # Recheck under the writer lock: another worker may have frozen
+                # the batch or claimed its lease since the queue was read.
+                leases = db.query("SELECT expires_at FROM leases WHERE id='community'")
+                if leases and leases[0]["expires_at"] > store.now():
+                    continue
+                latest = db.query("SELECT status,checkpoint FROM jobs WHERE id=$1", [row["id"]])
+                if not latest or latest[0]["status"] not in ("queued", "running", "paused"):
+                    continue
+                try:
+                    checkpoint = json.loads(latest[0]["checkpoint"])
+                except (ValueError, TypeError):
+                    checkpoint = None
+                unfrozen = checkpoint == {} or (isinstance(checkpoint, dict) and set(checkpoint) == {"weekStart", "cutoff"})
+                if unfrozen:
+                    db.query("UPDATE jobs SET status='skipped',finished_at=$2 WHERE id=$1", [row["id"], store.now()])
+                    continue
         stale_daily = kind != "community" and re.fullmatch(r"[a-z]+:\d{4}-\d{2}-\d{2}", row["id"]) and not row["id"].endswith(day)
-        if row["status"] == "queued" and (obsolete_community or stale_daily):
+        if row["status"] == "queued" and stale_daily:
             db.query("UPDATE jobs SET status='skipped',finished_at=$2 WHERE id=$1 AND status='queued'", [row["id"], store.now()])
             continue
         execute(row["id"], kind, day)
