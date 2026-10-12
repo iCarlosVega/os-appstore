@@ -13,6 +13,8 @@ WORKDIR /app
 COPY backend/requirements.txt ./backend/requirements.txt
 RUN pip install --no-cache-dir -r backend/requirements.txt
 COPY backend/app ./backend/app
+COPY backend/alembic.ini ./backend/alembic.ini
+COPY backend/alembic ./backend/alembic
 COPY migrations ./migrations
 ENV APP_ENV=production PYTHONUNBUFFERED=1 PORT=8000 BACKUP_DIR=/app/.data/backups
 RUN useradd --create-home --uid 10001 store && mkdir -p /app/.data/backups && chown -R store:store /app/.data
