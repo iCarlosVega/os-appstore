@@ -98,13 +98,13 @@ Each session also owns only its `docs/superpowers/completions/local-db-<lane>.md
 
 ## Coordinator integration and handoff
 
-Status: implementation and static integration gates complete. Checked lane tasks reflect committed implementations, lane completion reports and code review; they do not establish the separately listed behavioral cases. See `docs/superpowers/completions/local-db-integration.md`. Runtime activation and landing on `develop` remain pending.
+Status: implementation, static integration gates and owner-authorized local activation complete. Checked lane tasks reflect committed implementations, lane completion reports and code review; they do not establish every separately listed behavioral case. See `docs/superpowers/completions/local-db-integration.md` and `docs/superpowers/completions/local-db-activation.md` for evidence and remaining verification limits. The integrated stack is on `develop`.
 
 - [x] Review completion notes and verify exclusive file ownership. Create `local-db/integration` at the recorded planning baseline; merge migrations, catalog-import, then runtime (review at each step).
 - [x] Resolve shared requests explicitly; install pinned requirements in an isolated integration venv. Run approved syntax/import/config checks, `npm run typecheck` and `npm run build`. Review root SQLite and production startup compatibility, URL/destination guards, locking, snapshot consistency and all import write paths.
 - [x] Owner ran the three implementation sessions separately and reported all worktrees finished. This integration does not treat that report as permission to run application tests or live adoption/import.
-- [ ] Once implementation and the required behavioral validation are authorized, stop only root-local API/web/worker, back up existing local SQLite/config, create the dedicated local env, start PostgreSQL, migrate, preview/import public catalog with `--apply`, and start local dev+worker. Verify current public count (12 at planning time), both health paths, detail README and no unexpected production writes.
-- [ ] Land accepted integration on `develop`; never auto-merge to `main`, deploy production, delete new worktrees, or remove database volumes. Record final status and verification limits.
+- [x] Once implementation and the required behavioral validation are authorized, stop only root-local API/web/worker, back up existing local SQLite/config, create the dedicated local env, start PostgreSQL, migrate, preview/import public catalog with `--apply`, and start local dev+worker. Verify current public count (12 at planning time), both health paths, detail README and no unexpected production writes.
+- [x] Land accepted integration on `develop`; never auto-merge to `main`, deploy production, delete new worktrees, or remove database volumes. Record final status and verification limits.
 
 ## Session launch prompt
 

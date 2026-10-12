@@ -1,6 +1,6 @@
 # Local database integration
 
-Date: 2026-10-12. Status: implementation integrated and reviewed; local activation and database behavioral validation remain pending.
+Date: 2026-10-12. Status at integration review: implementation integrated and reviewed. Subsequent owner-authorized landing on `develop` and local activation are recorded in `local-db-activation.md`; broader database behavioral cases remain unverified.
 
 ## Integration
 
@@ -22,7 +22,7 @@ Date: 2026-10-12. Status: implementation integrated and reviewed; local activati
 - Read-only public HTTPS inspection found 12 apps and nine categories. Responses used identity encoding; app IDs were canonical UUIDs, repository IDs numeric strings, and category `parent_id` fields were present. This inspected source compatibility without invoking the importer or connecting to any database.
 - `npm audit` reported existing high-severity findings for unchanged Next.js 16.3.7 and transitive source-map-js. Dependency remediation is a separate follow-up; this integration adds no Node dependencies.
 
-## Remaining work and boundaries
+## Boundaries at integration review
 
 No application tests, live migrations/adoptions, catalog imports, runtime switches, paid calls, external notifications, production database writes, or deployments were performed. Root `develop`, its running services, existing SQLite/configuration, `main`, and production remain unchanged. All implementation worktrees are retained.
 

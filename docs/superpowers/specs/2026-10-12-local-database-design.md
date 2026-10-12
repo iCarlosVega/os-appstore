@@ -1,6 +1,6 @@
 # Local PostgreSQL development and catalog snapshot
 
-Status: all three implementation lanes are complete and integrated on `local-db/integration`. Static checks, build/typecheck and independent code review passed. Local activation, database behavioral validation and landing on `develop` remain pending; see `docs/superpowers/completions/local-db-integration.md`.
+Status: all three implementation lanes are integrated and landed on `develop`. Static checks, build/typecheck and independent code review passed. The local PostgreSQL stack is active with 12 apps; fresh migration/import, health, homepage/detail README and backup checks passed. Broader behavioral cases remain unverified; see `docs/superpowers/completions/local-db-activation.md`.
 
 ## Outcome
 
