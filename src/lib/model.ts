@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-export const JOB_KINDS = ["discovery", "maintenance", "priority", "digest", "backup"] as const;
+export const JOB_KINDS = ["discovery", "maintenance", "priority", "digest", "backup", "community"] as const;
 export const CATEGORY_NAMES = ["Productivity", "Development", "Creative Tools", "Privacy", "Utilities", "Communication", "Education", "AI", "Gaming"];
 export const PLATFORMS = ["Windows", "macOS", "Linux", "Android", "iOS", "Browser"] as const;
 export const TYPES = ["Desktop app", "Mobile app", "Game", "Command-line tool", "Browser extension", "Plugin", "Library", "Self-hosted service", "Web app"] as const;

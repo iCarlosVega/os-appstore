@@ -55,7 +55,7 @@ def _schema_ready(config, db):
             connection = sqlite3.connect(config.sqlite_path.as_uri() + "?mode=ro", uri=True, timeout=10)
         versions = connection.execute("SELECT version_num FROM alembic_version").fetchall()
         revisions = [row["version_num"] if config.database_url else row[0] for row in versions]
-        if revisions != ["0002_telegram_reviews"]:
+        if revisions not in (["0002_telegram_reviews"], ["0003_community_requests"]):
             raise ValueError("migration required")
         for statement in (
             "SELECT token,repo_id,candidate_revision,draft_version,owner_user_id,chat_id,status,snapshot,assessment,draft,options,confirmed,created_at,expires_at,message_id,app_slug FROM telegram_reviews WHERE 1=0",
