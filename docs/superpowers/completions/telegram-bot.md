@@ -19,7 +19,7 @@ No review-core, migration, runtime/config, launcher, store/admin/model, frontend
 - Safe import of `backend.app.telegram_api` with socket connection entry points and `sqlite3.connect` blocked: passed; installed httpx version is 0.28.1. No client requests/construction or application behavior was exercised.
 - Both files parsed with Python AST; frozen public interfaces inspected against the plan. Transport/library logging sites inspected against the installed httpx/httpcore source.
 - `git diff --check`: exit zero (repeated after staging for new files).
-- Read-only independent whole-lane review: pending final review below.
+- Read-only independent whole-lane review of `7f97d34..246efa2`: no actionable correctness, security or frozen-contract findings. The reviewer checked owner/private binding, canonical parsing, card/payload bounds, safe transport/logging, all six error classifications, guarded reset, transaction/lease boundaries, offsets and the shared delivery budget. Verdict: Task 2 ready for integration review, with activation still dependent on integrated review and authorized behavioral checks.
 
 Application tests, worker/services, live Telegram/GitHub requests, messages, schema operations and candidate mutations were not run, per the handoff. Compilation and safe import are not behavioral proof.
 
@@ -29,6 +29,7 @@ Application tests, worker/services, live Telegram/GitHub requests, messages, sch
 - Notification delivery is at least once: a crash after a successful send and before `mark_delivered` can duplicate a card. Both copies share the same token/version; the review core must keep publication idempotent. A lease lost during a network call cannot retract the already-issued request.
 - Cards show up to 60 category options and 12 type/cost options per snapshot to keep keyboards bounded (existing catalog/type lists fit). Additional options are explicitly labelled as omitted; versioned pagination would require a coordinated contract extension if the catalog grows beyond that bound. Long repository text and assessment are truncated for display; stored facts are preserved unchanged. HTTP APP_URL links are allowed only for loopback development; other app URLs require HTTPS.
 - Request log suppression intentionally affects httpx/httpcore diagnostics in the calling process. Root logging and other logger namespaces are untouched.
+- Independent review deferred judgments about absent core guarantees (concurrency/idempotency, rollback/audit atomicity, metadata preservation, expiry/reset), runtime guarantees (configuration/webhook/lease/retry/shutdown) and real Telegram/database operation. These are accepted integration dependencies rather than evidence of verified behavior in this lane; the coordinator must check them before activation.
 
 ## Proposed checks requiring authorization
 
@@ -38,3 +39,5 @@ Owner/user/chat/group and spoofed callback rejection; missing/inaccessible messa
 
 - The explicit no-application-tests policy replaces TDD and full-suite gates with syntax, safe-import and static review checks. Behavioral verification remains outstanding for authorized integration.
 - Only Task 2 was executed; other tasks remain with their assigned independent sessions. The branch/worktree stays in place for integration; no merge, push, deployment or activation was performed.
+- The executing-plans task-done helper exits on silent successful compile output. Syntax success was recorded directly in the local ledger instead; this does not change the verification boundary or imply passing application tests.
+- Review judgments about missing core/runtime and prohibited behavioral checks remain explicitly deferred to integration; incorrect assumptions there could invalidate replay/authorization guarantees. No shared interface defect was demonstrated by this lane's source review.
