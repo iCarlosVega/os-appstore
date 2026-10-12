@@ -19,7 +19,7 @@ No additional test dependency is required. Docker image pulling is disabled by t
 - Fresh schema, repeated migration, baseline upgrade with candidate/settings/category rows preserved, worker readiness and explicit schema-drift rejection.
 - Owner/chat binding, private-chat enforcement, malformed callbacks, explicit required fields, NSFW/publication pause/category removal blocks, stale candidate/draft versions and expiry renewal.
 - Optional metadata and manual overrides, reverted selections, rejection replay, monotonic offsets, concurrent review preparation and concurrent web/Telegram publication.
-- Full publication/audit/review rollback after a injected audit failure; restart after publication before offset persistence; selection replay after transient edit failure; expired acknowledgements and unchanged edits.
+- Full publication/audit/review rollback after an injected audit failure; restart after publication before offset persistence; selection replay after transient edit failure; expired acknowledgements and unchanged edits.
 - Unavailable-card resend, compare-and-clear delivery protection, crash after send before delivery persistence, five-card/twenty-update budgets, Unicode message and callback bounds.
 - Disabled/malformed configuration makes no DB/HTTP connection, webhook refusal, once mode, competing pollers, lost lease, ownership-safe cleanup, SIGINT/SIGTERM cleanup and restored handlers.
 - Real PostgreSQL writer-lock timeout, preserved configured schema and unchanged timeout defaults outside the Telegram scope.
@@ -35,4 +35,4 @@ Python compilation and Git whitespace checks also passed. Container inventory af
 
 ## Remaining operation
 
-The feature is verified for local integration. Real bot creation/configuration, backing up and migrating the intended local database, and starting Telegram remain separate activation steps. This run sent no real Telegram messages and published only synthetic listings into disposable databases. No production deployment or remote push was performed. The HTTP timeout remains a per-operation inactivity limit, not an overall request deadline.
+The verified integration was fast-forwarded into `develop` at `6af8402`, with identical tested code. Real bot creation/configuration, backing up and migrating the intended local database, and starting Telegram remain separate activation steps. This run sent no real Telegram messages and published only synthetic listings into disposable databases. No production deployment or remote push was performed. The HTTP timeout remains a per-operation inactivity limit, not an overall request deadline.
