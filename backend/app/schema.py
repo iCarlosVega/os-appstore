@@ -97,12 +97,15 @@ def _extra_objects(connection, inspector):
             WHERE n.nspname=current_schema() AND NOT t.tgisinternal
         """).all()
         objects += [f"trigger {row[0]}" for row in rows]
-        # Reflection omits PK deferrability and FK validation state.
+        # Reflection omits PK deferrability and FK validation state. Ordinary
+        # PK/unique/FK constraints are non-inheritable; only CHECK/NOT NULL can
+        # use NO INHERIT to alter the baseline's inheritance behavior.
         rows = connection.exec_driver_sql("""
             SELECT c.relname, k.conname FROM pg_constraint k
             JOIN pg_class c ON c.oid=k.conrelid JOIN pg_namespace n ON n.oid=c.relnamespace
             WHERE n.nspname=current_schema() AND
-                (NOT k.convalidated OR k.condeferrable OR k.condeferred OR k.connoinherit
+                (NOT k.convalidated OR k.condeferrable OR k.condeferred
+                 OR (k.contype IN ('c','n') AND k.connoinherit)
                  OR k.contype NOT IN ('p','u','f','c','n'))
         """).all()
         objects += [f"non-baseline constraint {row[0]}.{row[1]}" for row in rows]

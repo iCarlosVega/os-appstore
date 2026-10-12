@@ -1,6 +1,6 @@
 # Telegram integration review
 
-Completed static integration/review on 2026-10-12. Behavioral verification and activation remain pending owner authorization; Telegram has not been activated.
+Completed static integration/review on 2026-10-12. This report records that initial static stage. The owner subsequently authorized behavioral checks; see `telegram-verification.md` for the passing 52-test gate and migration correction. Telegram has not been activated.
 
 ## Branch and commits
 

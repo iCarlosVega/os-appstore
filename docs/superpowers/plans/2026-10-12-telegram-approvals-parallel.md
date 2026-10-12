@@ -157,8 +157,9 @@ Lease key is exactly `telegram:<bot_id>`; poller_key for offsets is exactly `tel
 
 - [x] Review lane reports and ownership, merge review-core → bot → runtime on isolated `telegram/integration` from recorded baseline, then perform a fresh whole-branch security/code review. See `docs/superpowers/completions/telegram-integration.md` for corrected findings and evidence.
 - [x] Install only existing pinned dependencies in integration's own environments. Compile/safe-import combined modules with network/DB blocked, check configuration isolation/commands and migration DDL; typecheck/build only if connected changes justify it. Record missing behavioral evidence explicitly.
-- [ ] Obtain explicit authorization for the proposed disposable behavioral checks before activation; no live candidate publication or Telegram messaging is implied by plan preparation or static checks.
-- [ ] After acceptance, land on `develop`, back up local database, migrate, configure a separate local bot privately, start the separate Telegram worker and review its first real card with the owner. Production setup/deployment stays separately authorized. Keep implementation worktrees until integration is accepted.
+- [x] Obtain explicit authorization for the proposed disposable behavioral checks before activation; no live candidate publication or Telegram messaging is implied by plan preparation or static checks. Owner authorized; all 52 checks passed. See `docs/superpowers/completions/telegram-verification.md`.
+- [ ] Land the verified integration on `develop`.
+- [ ] Activate separately: back up local database, migrate, configure a separate local bot privately, start the separate Telegram worker and review its first real card with the owner. Production setup/deployment stays separately authorized. Keep implementation worktrees until integration is accepted.
 
 ## Session launch
 
