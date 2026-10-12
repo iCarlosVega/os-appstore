@@ -113,4 +113,44 @@ form.inline { display: inline-block; margin: .2rem; }
 footer { border-top: 1px solid var(--line); font-size: 11px; }
 @media (max-width: 1000px) { .directory { gap: 1.75rem; grid-template-columns: 185px minmax(0,1fr); } .site-header, main, footer { padding-left: 1.5rem; padding-right: 1.5rem; } }
 @media (max-width: 700px) { .directory { grid-template-columns: 1fr; gap: 1.5rem; } .filter-sidebar { border-right: 0; border-bottom: 1px solid var(--line); padding: 0 0 1rem; } .filter-group { display: inline-block; vertical-align: top; width: 100%; padding: .65rem 0; } .filter-group:not(:first-of-type) { width: calc(33.333% - .4rem); margin-right: .4rem; } .categories { flex-direction: row; flex-wrap: wrap; gap: .2rem; } .categories a { font-size: 11px; } .sidebar-note { display: none; } .columns { grid-template-columns: 1fr; } .detail dl { grid-template-columns: 1fr; gap: .3rem; } .detail dd { margin-bottom: 1rem; } .site-header nav { gap: .8rem; } .site-header nav a { font-size: 11px; } .site-header, main, footer { padding-left: 1rem; padding-right: 1rem; } main { padding-top: 1.5rem; } }
+
+.download-panel { margin: 1.5rem 0 2rem; }
+.download-row { display: flex; align-items: center; gap: 1rem; flex-wrap: wrap; }
+.download-split { display: inline-flex; align-items: stretch; position: relative; }
+.download-primary { border-radius: 7px 0 0 7px; min-width: 135px; }
+.download-options { margin: 0; }
+.download-toggle { display: flex; align-items: center; justify-content: center; height: 100%; min-width: 42px; padding: .6rem; color: var(--paper); background: var(--accent); border: 1px solid var(--accent); border-left-color: #ffffff40; border-radius: 0 7px 7px 0; list-style: none; }
+.download-toggle::-webkit-details-marker { display: none; }
+.download-toggle:hover { opacity: .85; }
+.download-options[open] .download-toggle svg { transform: rotate(180deg); }
+.download-dropdown { position: absolute; top: calc(100% + 8px); left: 0; z-index: 5; width: 270px; max-width: calc(100vw - 5rem); padding: .5rem; background: var(--paper); border: 1px solid var(--line); border-radius: 10px; box-shadow: 0 8px 28px #00000012; }
+.download-dropdown-label { display: block; padding: .35rem .5rem .5rem; color: var(--muted); font-size: 9px; font-weight: 600; letter-spacing: .08em; }
+.copy-ai-option { width: 100%; justify-content: flex-start; gap: .75rem; padding: .65rem .5rem; border: 0; background: var(--paper); color: var(--ink); text-align: left; }
+.copy-ai-option:hover { background: var(--soft); opacity: 1; }
+.copy-ai-option strong, .copy-ai-option small { display: block; }
+.copy-ai-option strong { font-size: 13px; font-weight: 550; }
+.copy-ai-option small { margin-top: .1rem; color: var(--muted); font-size: 11px; font-weight: 400; }
+.download-note { margin: .75rem 0 0; }
+.download-status { margin: .5rem 0 0; font-size: 12px; }
+.download-status:empty { display: none; }
+.manual-copy { margin-top: .75rem; }
+.app-about { padding: 1.5rem 0 2rem; margin-bottom: 2rem; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); }
+.about-heading { margin-bottom: 1.5rem; }
+.about-heading h2 { margin: 0; font-size: 21px; }
+.about-heading a { font-size: 11px; }
+.readme { overflow-wrap: anywhere; line-height: 1.75; }
+.readme h1 { font-size: 1.8rem; }
+.readme h2 { margin: 2rem 0 1rem; font-size: 1.35rem; }
+.readme h3, .readme h4 { margin: 1.25rem 0 .6rem; line-height: 1.4; }
+.readme img { max-width: 100%; height: auto; vertical-align: middle; }
+.readme p[align=center] { text-align: center; }
+.readme pre { padding: 1rem; border: 1px solid var(--line); border-radius: 8px; background: var(--wash); white-space: pre; overflow-x: auto; }
+.readme code { font: .85em/1.6 ui-monospace, SFMono-Regular, Menlo, monospace; background: var(--soft); border-radius: 3px; padding: .1rem .3rem; }
+.readme pre code { background: transparent; padding: 0; }
+.readme blockquote { margin: 1rem 0; padding: .1rem 1rem; border-left: 3px solid var(--line); color: var(--muted); }
+.readme-table { overflow-x: auto; margin: 1.5rem 0; }
+.readme table { min-width: 480px; }
+.readme td, .readme th { padding: .8rem; }
+.readme details { padding: .75rem 1rem; border: 1px solid var(--line); border-radius: 7px; }
+.readme input[type=checkbox] { width: auto; }
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
