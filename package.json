@@ -17,7 +17,14 @@
     "backup": "node scripts/backend.mjs backup",
     "dev:web": "next dev",
     "dev:api": "node scripts/backend.mjs serve --reload",
-    "start:api": "node scripts/backend.mjs serve"
+    "start:api": "node scripts/backend.mjs serve",
+    "local:setup": "node scripts/local.mjs setup",
+    "local:db:up": "node scripts/local.mjs db-up",
+    "local:db:down": "node scripts/local.mjs db-down",
+    "local:dev": "node scripts/local.mjs dev",
+    "local:jobs": "node scripts/local.mjs worker",
+    "local:db:migrate": "node scripts/local.mjs migrate",
+    "local:catalog:import": "node scripts/local.mjs import-catalog"
   },
   "dependencies": {
     "next": "https://registry.npmjs.org/next/-/next-16.3.7.tgz",

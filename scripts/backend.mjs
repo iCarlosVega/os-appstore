@@ -2,7 +2,7 @@ import { spawn } from "node:child_process";
 import { existsSync } from "node:fs";
 import { resolve } from "node:path";
 
-if (existsSync(".env")) process.loadEnvFile(".env");
+if (process.env.STORE_LOCAL !== "1" && existsSync(".env")) process.loadEnvFile(".env");
 const python = process.env.PYTHON || resolve("backend/.venv", process.platform === "win32" ? "Scripts/python.exe" : "bin/python");
 if (!existsSync(python) && !process.env.PYTHON) {
   console.error("Set up FastAPI first: python3 -m venv backend/.venv, then backend/.venv/bin/python -m pip install -r backend/requirements.txt");

@@ -31,7 +31,7 @@ src/lib/backend.ts     Server-side HTTP client; no database/provider logic
 migrations/            Shared database schema
 ```
 
-Next.js does not read the database, execute jobs, or call GitHub/Jev directly. FastAPI validates incoming data with Pydantic and owns all writes and authorization. The proxy preserves `/api/*` URLs and owner cookies on the frontend origin, so public accounts and cross-origin browser calls are unnecessary.
+Next.js does not read the database, execute jobs, or call Jev. It fetches public GitHub READMEs for listing display; FastAPI handles repository discovery/metadata, validates incoming data with Pydantic, and owns all writes and authorization. The proxy preserves `/api/*` URLs and owner cookies on the frontend origin, so public accounts and cross-origin browser calls are unnecessary.
 
 ## Run locally
 
@@ -70,6 +70,67 @@ backend/.venv/bin/python -m uvicorn app.main:app --app-dir backend --reload --ho
 Use `PYTHON` to select a different interpreter, and `API_PORT`/`API_HOST` to change the development API listener. If changing ports, update `BACKEND_URL`; update `APP_URL` and OAuth callback when changing the browser origin. Production web and API are started separately.
 
 The launchers load the root `.env` and preserve explicit shell overrides. Relative `SQLITE_PATH` and `BACKUP_DIR` values resolve against the repository root for both the API and worker.
+
+### Isolated local PostgreSQL and catalog snapshot
+
+Use the dedicated `local:*` commands to develop against PostgreSQL without changing the existing SQLite file or targeting Railway. This workflow requires the migration, catalog-import and runtime lanes to be integrated first. Commands report missing migration/import resources rather than substituting another implementation.
+
+Install dependencies **in this worktree**, then create the local configuration:
+
+```sh
+npm ci
+python3 -m venv backend/.venv
+backend/.venv/bin/python -m pip install -r backend/requirements.txt
+npm run local:setup
+```
+
+The isolated local launcher requires a POSIX host such as macOS or Linux; it refuses Windows because the existing launchers cannot reliably stop descendant processes there. The original non-local workflow remains available on Windows. Setup creates a git-ignored `.env.development.local` with a random URL-safe password and owner-only permissions. It never overwrites an existing file. Keep that file with the persistent database: changing its password does not change a password already stored in a PostgreSQL volume. `.env.development.example` documents the settings; do not copy production credentials into it or the local file.
+
+Start a local Docker engine with Compose v2 or later, and stop any API/frontend already occupying ports 8000/3000 explicitly before switching. The wrapper does not stop existing services. Then:
+
+```sh
+npm run local:db:up
+npm run local:db:migrate
+npm run local:catalog:import
+# Review the preview counts, then explicitly insert the snapshot:
+npm run local:catalog:import -- --apply
+npm run local:dev
+```
+
+In another terminal in the same worktree:
+
+```sh
+npm run local:jobs
+# Or process due work once:
+npm run local:jobs -- --once
+```
+
+`local:dev` runs Next.js and Uvicorn with reload at `http://localhost:3000` and `http://127.0.0.1:8000`; both listeners bind to loopback. The worker is separate and requires an explicit restart after code/config changes. API startup does not migrate PostgreSQL: run `local:db:migrate` before starting services and again after integrating schema changes. Schema migration and catalog import are separate operations; the importer never initializes the database.
+
+`compose.local.yaml` contains only PostgreSQL 17 (`postgres:17-bookworm`). It uses project `os-appstore-local`, persistent volume `os-appstore-local_database`, database `os_appstore_development`, and host port **127.0.0.1:55432**. Production `compose.yaml` is separate. The wrapper requires a local Unix Docker socket, waits for database health on startup, and refuses occupied ports. Concurrent worktrees share these fixed local ports/project, so run only one integrated local stack at a time.
+
+All local commands except setup read only `.env.development.local`. Its values take precedence over inherited shell application settings. The wrapper forces development mode, the endpoints above, worktree-local Python/SQLite paths and `.data/local-postgres/backups`. `DATABASE_URL` must be exactly `postgresql://store:PASSWORD@127.0.0.1:55432/os_appstore_development`, with a matching URL-safe `POSTGRES_PASSWORD`; alternate hosts, ports, databases, socket/service/multihost URLs and query overrides are rejected before launching anything. Inherited `PG*` connection overrides are removed. No URL or password is printed in wrapper errors.
+
+Node launchers skip `.env` in local mode. Python requires an absolute `STORE_ENV_FILE`, loads only that file without interpolation, validates the dedicated destination, and pins application settings. GitHub OAuth/owner/auth/token, TypeSafe, Discord and proxy credentials default to explicit empty strings unless set in the local file. The default model is explicitly `jev-1.13.0`. Next.js may inspect its usual fallback env files, but these application values already exist in its process environment and cannot be replaced. Ordinary non-local commands retain their previous loading behavior; use `local:*` consistently for this stack.
+
+Local owner administration requires a separate GitHub OAuth app with callback `http://localhost:3000/api/auth/callback`, plus explicitly configured local owner ID/auth secret. Discovery needs a local GitHub token. Paid AI starts disabled in database settings; a key alone does not enable it. Notifications need an explicitly configured webhook. Enabling these integrations can make external calls; blank defaults keep them unconfigured.
+
+The catalog importer defaults to a preview using only public `GET /api/catalog` and `/api/categories` from `https://os-appstore.vercel.app`. `--apply` inserts missing apps/categories in one transaction. Repeated imports skip matching app identities even after local edits/unpublication, preserve existing category definitions and local counters, and reject conflicting identities/categories rather than overwrite them. Imported click counts start at zero; private production records/settings are not copied. If the two public responses are inconsistent, retry the preview later. An alternative HTTPS origin can be supplied with `-- --source-url https://example.com`; the importer validates it. This is a snapshot, not ongoing synchronization, and does not write to production.
+
+Ctrl+C stops the foreground dev process or worker; stop both separately before shutting down the database. Database logs and shutdown:
+
+```sh
+docker compose --env-file .env.development.local -p os-appstore-local -f compose.local.yaml logs -f db
+npm run local:db:down
+```
+
+`local:db:down` keeps the database volume; the next `local:db:up` reuses it. Do not add `-v` or remove volumes if you need the records. With the integrated backend and PostgreSQL 17 client tools (`pg_dump`/`pg_restore`) installed locally, create a backup using the same guarded Python configuration:
+
+```sh
+STORE_LOCAL=1 STORE_ENV_FILE="$PWD/.env.development.local" backend/.venv/bin/python -m backend.app.cli backup
+```
+
+The worker also schedules backups under `.data/local-postgres/backups`. Stop API/worker before recovery, preserve the volume and local env, and follow the backup/restore instructions below. Review migration failures before retrying: never blindly stamp an incompatible schema or drop populated tables to make migration succeed. Restore into a separate empty recovery database and review it before switching; ordinary local commands deliberately reject other destinations. The previous `.data/store.sqlite` and root `.env` remain available for the original non-local workflow.
 
 ### Background worker
 
