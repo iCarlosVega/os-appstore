@@ -116,13 +116,15 @@ The graph traces discovery and maintenance through `jobs.execute` → `run_due_j
 
 Reuse the migration/orchestration session for integration; a fifth implementation session is unnecessary.
 
-- [ ] Inspect each completion note and branch diff. Check file ownership and avoid merging speculative refactors or duplicate porting.
-- [ ] Merge `ai/provider-budget`, `ai/catalog-search`, `ai/discovery`, then `ai/maintenance-jobs` into an integration branch based on the recorded common baseline. This order validates dependencies; workers can develop concurrently against unchanged interfaces.
+- [x] Inspect each completion note and branch diff. Check file ownership and avoid merging speculative refactors or duplicate porting.
+- [x] Merge `ai/provider-budget`, `ai/catalog-search`, `ai/discovery`, then `ai/maintenance-jobs` into an integration branch based on the recorded common baseline. This order validates dependencies; workers can develop concurrently against unchanged interfaces.
 - [ ] Resolve shared-file requests together. The integrator owns any needed `store.py`, `db.py`, `models.py`, `config.py`, API/CLI, schema, dependency, or deployment edits.
 - [ ] Verify provider consumers, discovery's JobContext, maintenance's GitHub calls, durable state, admin pause/resume, and unchanged frontend search JSON against the merged code.
 - [ ] Run Python syntax/import checks and the migration's TypeScript/build gates. Follow `backend/requirements.txt` in a worktree-local virtualenv; do not share mutable environments between sessions. Do not migrate or run workers against the main checkout's database.
 - [ ] Record limits honestly: without requested behavioral tests and live integration access, compilation and review do not prove concurrency, billing, DST, PostgreSQL, OAuth, or provider behavior.
 - [ ] Keep worktrees until the owner accepts integration; do not deploy or delete branches automatically.
+
+Merge/review record: `docs/superpowers/completions/ai-integration.md`. The four conflict-free merges are on `ai/integration`; shared fixes and final validation remain pending, and `main` is unchanged.
 
 ## Launch prompt
 
