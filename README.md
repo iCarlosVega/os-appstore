@@ -22,6 +22,10 @@ backend/
   app/discord.py       Owner notifications
   app/backup.py        Database snapshots and retention
   app/cli.py           Migrate, worker, and backup commands
+  app/telegram_worker.py  Separate opt-in Telegram poller and bot-scoped lease
+  app/telegram_bot.py     Owner-only review cards and update controller
+  app/telegram_api.py     Bounded Telegram Bot API transport
+  app/telegram_review.py  Durable review drafts, actions and polling offsets
   requirements.txt
   Dockerfile
 src/app/               Next.js pages and administration UI
@@ -111,7 +115,7 @@ npm run local:jobs -- --once
 
 All local commands except setup read only `.env.development.local`. Its values take precedence over inherited shell application settings. The wrapper forces development mode, the endpoints above, worktree-local Python/SQLite paths and `.data/local-postgres/backups`. `DATABASE_URL` must be exactly `postgresql://store:PASSWORD@127.0.0.1:55432/os_appstore_development`, with a matching URL-safe `POSTGRES_PASSWORD`; alternate hosts, ports, databases, socket/service/multihost URLs and query overrides are rejected before launching anything. Inherited `PG*` connection overrides are removed. No URL or password is printed in wrapper errors.
 
-Node launchers skip `.env` in local mode. Python requires an absolute `STORE_ENV_FILE`, loads only that file without interpolation, validates the dedicated destination, and pins application settings. GitHub OAuth/owner/auth/token, TypeSafe, Discord and proxy credentials default to explicit empty strings unless set in the local file. The default model is explicitly `jev-1.13.0`. Next.js may inspect its usual fallback env files, but these application values already exist in its process environment and cannot be replaced. Ordinary non-local commands retain their previous loading behavior; use `local:*` consistently for this stack.
+Node launchers skip `.env` in local mode. Python requires an absolute `STORE_ENV_FILE`, loads only that file without interpolation, validates the dedicated destination, and pins application settings. GitHub OAuth/owner/auth/token, TypeSafe, Discord and proxy credentials default to explicit empty strings unless set in the local file. Telegram defaults to `TELEGRAM_ENABLED=0` and blank token/owner/chat, even if shell or fallback env files contain Telegram credentials. The default model is explicitly `jev-1.13.0`. Next.js may inspect its usual fallback env files, but these application values already exist in its process environment and cannot be replaced. Ordinary non-local commands retain their previous loading behavior; use `local:*` consistently for this stack.
 
 Local owner administration requires a separate GitHub OAuth app with callback `http://localhost:3000/api/auth/callback`, plus explicitly configured local owner ID/auth secret. Discovery needs a local GitHub token. Paid AI starts disabled in database settings; a key alone does not enable it. Notifications need an explicitly configured webhook. Enabling these integrations can make external calls; blank defaults keep them unconfigured.
 
@@ -172,6 +176,55 @@ Next.js needs only **`BACKEND_URL`** and, in production, the shared **`BACKEND_P
 Sign in at `/admin`, add official GitHub repository URLs under Settings → Seeds, run the worker, and queue Discovery in Operations. Review Candidates, verify free-use eligibility and licensing, select categories/platforms, record setup/requirements, explicitly confirm the selected software type and non-NSFW content, and approve the reviewed revision. The type confirmation is required on listing edits too; a discovered candidate's initial type is not verified evidence.
 
 Owner corrections made during initial approval or later editing are preserved as manual overrides. Repository identity, URL, license, and supplied cost/category changes become private proposals. Review shows current and proposed eligibility/categories, and approval requires both the proposal and listing revisions to match. Missing cost/category evidence in legacy proposals keeps approved values. The current GitHub adapter does not supply cost/category change evidence; its unknown defaults cannot erase approved values. Replacement repositories cannot supply new public metadata before identity approval. Rejected repository IDs remain suppressed until explicitly reopened. Missing repositories keep the approved destination with an availability warning; inactive projects are downranked. Descriptions remain upstream or owner-authored.
+
+### Telegram candidate approvals
+
+Telegram review runs in its own process, independently of the API and discovery/jobs worker. GitHub OAuth is not required for Telegram review; web administration still uses GitHub OAuth. Discovery still needs its existing configuration. Telegram never automatically approves candidates.
+
+Integrate the review-core, bot and runtime lanes before starting. Activation requires the owner's separate authorization for disposable behavioral checks of authorization, stale/duplicate callbacks, transaction rollback and restart recovery. Syntax/import checks alone do not establish that approval is safe. These instructions describe later operation; implementation does not create a bot, contact Telegram, migrate a database or publish candidates.
+
+Create a dedicated local bot through the official [BotFather](https://core.telegram.org/bots/features#botfather) `/newbot` flow and store its token privately. Use a different bot/token for each database, including local and production. Never commit tokens, use a `NEXT_PUBLIC_` setting, or put token-bearing request URLs in logs, shell history or screenshots. Configure these four values in `.env.development.local` for `local:*`, or in the ordinary backend environment for non-local operation:
+
+```dotenv
+TELEGRAM_ENABLED=0
+TELEGRAM_BOT_TOKEN=
+TELEGRAM_OWNER_USER_ID=
+TELEGRAM_CHAT_ID=
+```
+
+Keep the worker stopped while identifying the owner/chat. In Telegram, open a **private** conversation with your own bot and send `/start`. Inspect the authenticated Bot API `getUpdates` result using a trusted local client that keeps the token and full response private. Take the owner's numeric `message.from.id` and `message.chat.id`, verify `message.chat.type` is `private`, and verify that update came from your own account. Do not run a second update consumer while the worker is active. Usernames, group/channel IDs and whoever happens to send the first `/start` never establish trust. Both configured IDs must be canonical positive decimals (no whitespace, signs or leading zeros), at most `4503599627370495`; the worker requires both exact IDs on incoming commands/callbacks.
+
+Back up the intended database, then explicitly migrate it with the integrated release **before** enabling Telegram. For the isolated local workflow, after installing this worktree's dependencies and running `local:setup`:
+
+```sh
+npm run local:db:up
+npm run local:db:migrate
+# Privately fill the local bot token and owner/chat IDs, then set TELEGRAM_ENABLED=1.
+npm run local:telegram
+```
+
+For the ordinary environment, use `npm run db:migrate`, configure the intended database and frontend `APP_URL`, set the four Telegram values with `TELEGRAM_ENABLED=1`, then run `npm run telegram`. Only exactly `1` enables the worker. An absent/disabled flag or missing/malformed credentials exits before DB/network access. Local Node and Python loaders pin all four Telegram values to the local file or disabled/blank defaults; inherited shell credentials and Next.js fallback env files cannot enable local Telegram. Existing local env files are not overwritten by `local:setup`; add the four values privately if your file predates them.
+
+| Command | Behavior |
+| --- | --- |
+| `npm run telegram` | Ordinary environment, continuous polling |
+| `npm run telegram:once` | Ordinary environment, one iteration with zero-second poll timeout |
+| `npm run local:telegram` | Guarded local environment, continuous polling |
+| `npm run local:telegram:once` | Guarded local environment, one iteration with zero-second poll timeout |
+
+Direct equivalents are `python -m app.telegram_worker [--once]` from `backend/` using its venv, or `backend/.venv/bin/python -m backend.app.telegram_worker [--once]` from the repository root. Direct local invocation also requires `STORE_LOCAL=1` and an absolute `STORE_ENV_FILE` pointing at this worktree's local file. `--once` may send real cards and process real approvals; it is not a dry run. API and discovery startup never starts Telegram. The existing Docker Compose definitions do not start this additional process; a future production deployment must explicitly provision a separate Telegram worker with its own production bot, database and `APP_URL`.
+
+Startup checks schema revision `0002_telegram_reviews`, required tables and initialized settings with read-only queries; it never initializes/migrates schema, and SQLite readiness cannot create a missing file. It verifies the bot with `getMe`, checks `getWebhookInfo`, and refuses a configured webhook with instructions to review/remove it deliberately. The worker never deletes webhooks or drops pending updates automatically. Missing lane modules/dependencies fail with an integration message.
+
+Pending candidates, including the backlog, are delivered at most five new cards per iteration. Only the configured private owner/chat can use `/start`, `/help` and `/pending`; `/pending` uses the same bounded delivery budget. Each card names its environment and repository and shows listing facts, activity, unknown fields and assessment flags. Explicitly select a category, software type and free-use cost model, confirm non-NSFW content, review the current summary, then publish that exact draft or reject it. Suggestions require confirmation too. Only `Free` and `Free with optional paid features` qualify; known NSFW candidates remain blocked. Unknown optional facts are preserved. Reviews expire after seven days; refreshed candidates, edited drafts and stale confirmation buttons cannot publish an earlier snapshot. Approval uses the existing store validation/transaction and preserves manual overrides.
+
+One renewable database lease, **`telegram:<bot_id>`**, covers every owner/chat configuration for that bot. It expires after 90 seconds and renews every 20 seconds; a second poller fails clearly and lease loss stops processing. Polling uses at most 20 updates, a 20-second poll timeout and a 30-second HTTP timeout. Only transient transport and rate-limit failures retry, using interruptible backoff capped at 60 seconds. Other permanent failures stop safely without raw provider errors or token URLs.
+
+Offsets are durable, monotonic and scoped to **`telegram:<bot_id>:<owner_user_id>:<chat_id>`**. Restart resumes the saved offset after completed/ignored updates. Replayed final actions cannot publish twice. Delivery is at least once: a crash after sending but before storing the message ID can duplicate a card, but both cards use the same review token and publication remains idempotent. An unchanged edit or expired callback acknowledgement is nonfatal. An unavailable open card becomes eligible for bounded resend; terminal publication stands even when its success-message edit fails.
+
+Stop with Ctrl+C or SIGTERM. Backoff stops immediately; an in-flight HTTP request can take up to its 30-second timeout. Normal shutdown closes the client and releases only this process's lease. After a crash or failed database cleanup, allow the 90-second lease to expire before retrying. Restart explicitly after code/config changes. To disable, stop the process and set `TELEGRAM_ENABLED=0`; stored reviews/audit/offsets stay available. Stop Telegram along with API/jobs before database recovery.
+
+Database leases cannot coordinate **different databases**: separate databases must use separate bots even if each has only one worker. Before changing owner/chat, stop the previous consumer and verify the new identity privately. Telegram may already have acknowledged earlier updates, so changing owner/chat or offset keys cannot recover an old per-user inbox. No automatic enrollment, bulk approval or production activation is provided.
 
 ### Default schedules
 

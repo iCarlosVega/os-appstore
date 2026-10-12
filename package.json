@@ -14,6 +14,8 @@
     "db:migrate": "node scripts/backend.mjs migrate",
     "jobs": "node scripts/backend.mjs worker",
     "jobs:once": "node scripts/backend.mjs worker --once",
+    "telegram": "node scripts/backend.mjs telegram",
+    "telegram:once": "node scripts/backend.mjs telegram --once",
     "backup": "node scripts/backend.mjs backup",
     "dev:web": "next dev",
     "dev:api": "node scripts/backend.mjs serve --reload",
@@ -23,6 +25,8 @@
     "local:db:down": "node scripts/local.mjs db-down",
     "local:dev": "node scripts/local.mjs dev",
     "local:jobs": "node scripts/local.mjs worker",
+    "local:telegram": "node scripts/local.mjs telegram",
+    "local:telegram:once": "node scripts/local.mjs telegram --once",
     "local:db:migrate": "node scripts/local.mjs migrate",
     "local:catalog:import": "node scripts/local.mjs import-catalog"
   },

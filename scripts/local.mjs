@@ -9,7 +9,7 @@ import { parseEnv } from "node:util";
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const envFile = resolve(root, ".env.development.local");
 const [command, ...options] = process.argv.slice(2);
-const commands = ["setup", "db-up", "db-down", "dev", "worker", "migrate", "import-catalog"];
+const commands = ["setup", "db-up", "db-down", "dev", "worker", "telegram", "migrate", "import-catalog"];
 
 class LocalError extends Error {}
 function fail(message) { throw new LocalError(message); }
@@ -34,6 +34,10 @@ function localEnvironment() {
     PYTHON: resolve(root, "backend/.venv/bin/python"),
     SQLITE_PATH: resolve(root, ".data/local-postgres/unused.sqlite"), BACKUP_DIR: resolve(root, ".data/local-postgres/backups"),
     TYPESAFE_MODEL: local.TYPESAFE_MODEL || "jev-1.13.0",
+    TELEGRAM_ENABLED: local.TELEGRAM_ENABLED || "0",
+    TELEGRAM_BOT_TOKEN: local.TELEGRAM_BOT_TOKEN || "",
+    TELEGRAM_OWNER_USER_ID: local.TELEGRAM_OWNER_USER_ID || "",
+    TELEGRAM_CHAT_ID: local.TELEGRAM_CHAT_ID || "",
   };
 }
 
@@ -79,8 +83,8 @@ function run(executable, args, env) {
 async function main() {
   if (!commands.includes(command)) fail(`Usage: node scripts/local.mjs <${commands.join("|")}> [options]`);
   if (process.platform === "win32") fail("local:* commands require a POSIX host (macOS/Linux) for child-process cleanup. Use the original non-local workflow on Windows.");
-  if (options.length && command !== "import-catalog" && !(command === "worker" && options.length === 1 && options[0] === "--once")) {
-    fail("Only import-catalog accepts import flags; worker accepts --once. Other local commands take no options.");
+  if (options.length && command !== "import-catalog" && !(["worker", "telegram"].includes(command) && options.length === 1 && options[0] === "--once")) {
+    fail("Only import-catalog accepts import flags; worker and telegram accept --once. Other local commands take no options.");
   }
   if (command === "setup") {
     const template = readFileSync(resolve(root, ".env.development.example"), "utf8");
