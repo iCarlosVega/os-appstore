@@ -1,0 +1,22 @@
+name: os-appstore-local
+
+services:
+  db:
+    image: postgres:17-bookworm
+    environment:
+      POSTGRES_USER: store
+      POSTGRES_DB: os_appstore_development
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Run npm run local:setup first}
+    ports:
+      - "127.0.0.1:55432:5432"
+    volumes:
+      - database:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "store", "-d", "os_appstore_development"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+    restart: unless-stopped
+
+volumes:
+  database:
