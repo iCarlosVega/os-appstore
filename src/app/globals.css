@@ -84,7 +84,7 @@ h3 { margin: .3rem 0; }
 .empty p { max-width: 400px; margin: 0 auto 1.2rem; color: var(--muted); font-size: 13px; }
 .empty-icon { display: inline-flex; width: 42px; height: 42px; align-items: center; justify-content: center; border: 1px solid var(--line); border-radius: 10px; background: var(--paper); font-size: 21px; }
 .empty .button { font-size: 12px; }
-.detail { max-width: 850px; }
+.detail { max-width: 850px; margin-inline: auto; }
 .detail-heading { display: flex; align-items: center; gap: 1rem; margin: 1.5rem 0; }
 .detail-heading h1 { margin: 0; }
 .detail-heading p { margin: .35rem 0 0; }
