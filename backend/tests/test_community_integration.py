@@ -11,7 +11,7 @@ import threading
 import time
 import unittest
 from concurrent.futures import ThreadPoolExecutor
-from contextlib import ExitStack, closing
+from contextlib import ExitStack, closing, contextmanager
 from datetime import UTC, datetime
 from dataclasses import replace
 from http.cookies import SimpleCookie
@@ -151,6 +151,7 @@ class IntegrationCases:
         schema.upgrade_schema()
         store.initialize()
         self.fail_repo, self.archived, self.provider_requests = None, set(), []
+        self.missing, self.changed = set(), {}
         self.updates, self.cards = [], []
         self.stack.enter_context(patch.object(httpx, 'Client', side_effect=lambda **kw:
             RAW_HTTP_CLIENT(**(kw | {'transport': httpx.MockTransport(self.provider)}))))
@@ -185,9 +186,11 @@ class IntegrationCases:
         if path.endswith(('/readme', '/releases/latest')):
             return httpx.Response(404, json={'message': 'Not Found'})
         repo_id = path.rsplit('-', 1)[-1]
+        if repo_id in self.missing:
+            return httpx.Response(404, json={'message': 'Not Found'})
         if repo_id == self.fail_repo:
             return httpx.Response(503, json={'message': 'Synthetic failure'})
-        return httpx.Response(200, json=self.repository(repo_id))
+        return httpx.Response(200, json=self.repository(self.changed.get(repo_id, repo_id)))
 
     def repository(self, repo_id):
         return dict(id=int(repo_id), name='repo-'+repo_id, html_url=f'https://github.com/synthetic/repo-{repo_id}',
@@ -206,6 +209,16 @@ class IntegrationCases:
     def seed(self, count=12):
         for i in range(1, count+1):
             community_requests.record_suggestion(metadata(str(i), license='MIT'), 'browser-a', at='2026-10-10T12:00:00.000Z')
+
+    @contextmanager
+    def at(self, timestamp):
+        instant = datetime.fromisoformat(timestamp.replace('Z', '+00:00'))
+        class LaterClock(datetime):
+            @classmethod
+            def now(cls, tz=None):
+                return instant.astimezone(tz or UTC)
+        with patch.object(store, 'now', return_value=timestamp), patch.object(jobs, 'datetime', LaterClock):
+            yield
 
     def bot(self):
         client = telegram_api.TelegramClient('900:'+'A'*35)
@@ -312,6 +325,43 @@ class IntegrationCases:
         self.assertEqual(store.candidates(), [])
         self.assertEqual(len([p for p in self.provider_requests if not p.endswith(('/readme', '/releases/latest'))]), 30)
         self.assertEqual(db.query("SELECT COUNT(*) AS n FROM community_suggestions WHERE state='pending'")[0]['n'], 35)
+
+    def test_deferred_unavailable_leaders_allow_later_weeks_to_reach_backlog(self):
+        self.seed(65)
+        self.archived = {str(i) for i in [*range(1, 21), *range(31, 61)]}
+        self.missing = {str(i) for i in range(21, 26)}
+        self.changed = {str(i): str(1000+i) for i in range(26, 31)}
+        jobs.execute('community:2026-10-05', 'community', '2026-10-13')
+        self.assertEqual(store.candidates(), [])
+        with self.at('2026-10-20T16:00:00.000Z'):
+            jobs.execute('community:2026-10-12', 'community', '2026-10-20')
+        second = json.loads(db.query("SELECT checkpoint FROM jobs WHERE id='community:2026-10-12'")[0]['checkpoint'])
+        self.assertEqual([r['repoId'] for r in second['ranked']], [str(i) for i in range(31, 61)])
+        with self.at('2026-10-27T16:00:00.000Z'):
+            jobs.execute('community:2026-10-19', 'community', '2026-10-27')
+        self.assertEqual({c['repoId'] for c in store.candidates()}, {str(i) for i in range(61, 66)})
+        self.assertEqual(db.query('SELECT COUNT(*) AS n FROM community_contributions')[0]['n'], 65)
+        self.assertEqual(db.query("SELECT COUNT(*) AS n FROM community_suggestions WHERE state='pending'")[0]['n'], 60)
+
+    def test_new_verified_nonarchived_submission_revalidates_deferred_project(self):
+        self.seed(1)
+        self.archived = {'1'}
+        jobs.execute('community:2026-10-05', 'community', '2026-10-13')
+        self.assertEqual(community_requests.rank_pending(cutoff='2026-10-19T04:00:00.000Z'), [])
+        with self.at('2026-10-20T16:00:00.000Z'):
+            with self.client() as client:
+                self.submit(client, '1')  # Still archived: must not reset the deferral.
+            self.assertEqual(community_requests.rank_pending(cutoff='2026-10-26T04:00:00.000Z'), [])
+            self.archived = set()
+            with self.client() as client:
+                response = self.submit(client, '1')
+            self.assertEqual(response.status_code, 201)
+            ranked = community_requests.rank_pending(cutoff='2026-10-26T04:00:00.000Z')
+            self.assertEqual([r['repoId'] for r in ranked], ['1'])
+            self.assertEqual(ranked[0]['suggestionCount'], 3)
+        with self.at('2026-10-27T16:00:00.000Z'):
+            jobs.execute('community:2026-10-19', 'community', '2026-10-27')
+        self.assertEqual([c['repoId'] for c in store.candidates()], ['1'])
 
     def test_search_provider_limit_is_durable_under_concurrent_clients(self):
         def search(index):

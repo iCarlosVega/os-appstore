@@ -251,6 +251,8 @@ At Monday 00:05 in Settings' timezone, the job freezes up to 30 eligible reposit
 
 Existing catalog entries and candidates, including rejected candidates, are excluded. Archived or unavailable repositories are skipped with bounded backfill; transient provider failures wait for resumption. Candidate creation, queue marking and checkpoint advance commit together under lease. Selection makes no AI calls, never publishes automatically and retains unknown metadata for owner review. The Telegram worker delivers the existing Open repo / Accept / Reject / More cards when online. Only an authorized owner approval publishes.
 
+Archived, missing or identity-changed suggestions retain their contributions but are deferred from later rankings using their durable skip audit. A newer server-verified, nonarchived submission makes the project eligible for revalidation; another archived submission does not. Expiry of the existing one-year audit retention also permits a later recheck. This prevents unavailable leaders from occupying all 30 evaluation slots every week while preserving the backlog and review history.
+
 Search caches provider facts for five minutes but refreshes store status on every response. Ten searches/lookups per address per minute and ten uncached provider operations per minute across backend processes limit GitHub usage. Submission keeps the existing five-attempt hourly address limit. Search failure still permits repository pasting and idea-only requests.
 
 ### Community rollout and rollback
