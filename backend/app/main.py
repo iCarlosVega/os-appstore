@@ -5,7 +5,7 @@ from contextlib import asynccontextmanager
 from urllib.parse import urlencode
 from uuid import uuid4
 import httpx
-from fastapi import Depends, FastAPI, HTTPException, Query, Request
+from fastapi import Depends, FastAPI, HTTPException, Query, Request, Response
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse, RedirectResponse
 from pydantic import BaseModel, ValidationError
@@ -123,12 +123,22 @@ def download(data: DownloadRequest, request: Request):
         return {"url": listing["repoUrl"]}
 
 @app.post("/api/requests", status_code=201, tags=["Catalog"], dependencies=[Depends(auth.require_origin)])
-def app_request(data: AppRequest, request: Request):
+def app_request(data: AppRequest, request: Request, response: Response):
+    from . import community_requests, github, request_identity
     if not auth.rate_limit(request, "request", 5, 3600):
         raise HTTPException(429, "Please wait before submitting more requests.")
     repository = repository_url(data.repoUrl) if data.repoUrl else ""
-    db.query("INSERT INTO app_requests(id,name,repo_url,status,created_at) VALUES($1,$2,$3,'pending',$4)", [str(uuid4()), data.name, repository, store.now()])
-    return {"ok": True}
+    if not repository:
+        db.query("INSERT INTO app_requests(id,name,repo_url,status,created_at) VALUES($1,$2,$3,'pending',$4)", [str(uuid4()), data.name, "", store.now()])
+        return {"ok": True, "status": "recorded", "suggestionCount": None}
+    try:
+        verified = github.fetch_repository(repository)
+    except github.MissingRepository:
+        raise HTTPException(404, "Repository is missing or inaccessible.") from None
+    except github.GithubError:
+        raise HTTPException(503, "GitHub repository verification is unavailable. Please try again later.") from None
+    visitor_key = request_identity.visitor_identity(request, response)
+    return community_requests.record_suggestion(verified, visitor_key)
 
 @app.get("/api/auth/status", tags=["Owner"])
 def owner_status(request: Request):

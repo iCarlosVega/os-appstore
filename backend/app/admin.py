@@ -59,11 +59,13 @@ def edits(form: Form, original: Metadata) -> Metadata:
     return data
 
 def dashboard():
+    from .community_requests import admin_suggestions
     return {
         "settings": store.get_settings().model_dump(), "apps": store.list_apps(True), "candidates": store.candidates(),
         "categories": store.categories(), "usage": budget.usage(),
         "proposals": db.query("SELECT * FROM proposals WHERE status='pending' ORDER BY updated_at DESC"),
         "requests": db.query("SELECT * FROM app_requests WHERE status='pending' ORDER BY created_at DESC"),
+        "communitySuggestions": admin_suggestions(),
         "jobs": db.query("SELECT * FROM jobs ORDER BY started_at DESC LIMIT 50"),
         "notifications": db.query("SELECT * FROM notifications ORDER BY created_at DESC LIMIT 30"),
         "costEntries": db.query("SELECT * FROM cost_entries ORDER BY created_at DESC LIMIT 50"),
