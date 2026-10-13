@@ -12,6 +12,7 @@ from .config import config
 from .discovery import discover
 from .maintenance import maintain
 from .models import JOB_KINDS
+from .community_weekly import closed_week, promote_weekly, week_context
 
 logger = logging.getLogger(__name__)
 
@@ -49,8 +50,27 @@ def digest():
     return discord.queue(f"Weekly software store digest\nReview: {config.app_url}/admin\n{len(pending)} candidates · {uncertain} uncertain · {requests} app requests · {changes} changes to review\nCosts ({costs['period']}): Jev {budget.money(costs['ai'])}, hosting allowance/usage {budget.money(costs['hosting'])}, total {budget.money(costs['total'])} / {budget.money(costs['budget'])}\nOther agent providers: not configured.\nRecent runs (up to 5):\n{recent}\nCandidates (up to 8):\n{names}")
 
 def _blocked(kind, settings):
-    external = kind in ("discovery", "maintenance", "priority")
-    return kind not in JOB_KINDS or kind in settings.failedKinds or (external and (settings.budgetPaused or not config.github_token)) or (kind == "discovery" and settings.discoveryPaused) or (kind in ("maintenance", "priority") and settings.maintenancePaused)
+    external = kind in ("discovery", "maintenance", "priority", "community")
+    return kind not in JOB_KINDS or kind in settings.failedKinds or (external and (settings.budgetPaused or not config.github_token)) or (kind in ("discovery", "community") and settings.discoveryPaused) or (kind == "community" and settings.publicationPaused) or (kind in ("maintenance", "priority") and settings.maintenancePaused)
+
+def _community_alias(job_id):
+    """Normalize admin's manual/retry jobs to one dated, capped batch."""
+    if not re.fullmatch(r"community:manual:[0-9a-f-]{36}", job_id):
+        return job_id
+    rows = db.query("SELECT checkpoint FROM jobs WHERE id=$1 AND kind='community'", [job_id])
+    if not rows:
+        raise RuntimeError("Community retry job is unavailable.")
+    saved = json.loads(rows[0]["checkpoint"])
+    week = week_context(saved["weekStart"], store.get_settings().timezone) if saved else closed_week(datetime.now(UTC), store.get_settings().timezone)
+    canonical = f"community:{week['weekStart']}"
+    existing = db.query("SELECT status FROM jobs WHERE id=$1", [canonical])
+    if not existing:
+        db.query("INSERT INTO jobs(id,kind,status,checkpoint,started_at) VALUES($1,'community','queued',$2,$3)", [canonical, store.encode(saved), store.now()])
+    elif existing[0]["status"] in ("failed", "resumed"):
+        # The canonical row is authoritative; never reset its frozen checkpoint.
+        db.query("UPDATE jobs SET status='queued',error=NULL,finished_at=NULL WHERE id=$1", [canonical])
+    db.query("UPDATE jobs SET status='resumed',finished_at=$2 WHERE id=$1", [job_id, store.now()])
+    return canonical
 
 def execute(job_id, kind, local_day):
     owner = str(uuid4())
@@ -61,12 +81,18 @@ def execute(job_id, kind, local_day):
         leases = db.query("SELECT * FROM leases WHERE id=$1", [lease_id])
         if leases and leases[0]["expires_at"] > store.now():
             return
+        if kind == "community":
+            job_id = _community_alias(job_id)
         rows = db.query("SELECT status,checkpoint FROM jobs WHERE id=$1", [job_id])
         if rows and rows[0]["status"] in ("complete", "failed", "resumed", "skipped"):
             return
         db.query("INSERT INTO leases(id,owner,expires_at) VALUES($1,$2,$3) ON CONFLICT(id) DO UPDATE SET owner=excluded.owner,expires_at=excluded.expires_at", [lease_id, owner, future(120)])
         saved = rows[0]["checkpoint"] if rows else "{}"
-        db.query("INSERT INTO jobs(id,kind,status,checkpoint,started_at) VALUES($1,$2,'running','{}',$3) ON CONFLICT(id) DO UPDATE SET status='running',error=NULL,finished_at=NULL", [job_id, kind, store.now()])
+        if kind == "community" and saved == "{}" and re.fullmatch(r"community:\d{4}-\d{2}-\d{2}", job_id):
+            week = week_context(job_id.removeprefix("community:"), store.get_settings().timezone)
+            # Keep retry identity/cutoff even if ranking fails before its snapshot.
+            saved = store.encode({key: week[key] for key in ("weekStart", "cutoff")})
+        db.query("INSERT INTO jobs(id,kind,status,checkpoint,started_at) VALUES($1,$2,'running',$3,$4) ON CONFLICT(id) DO UPDATE SET status='running',checkpoint=excluded.checkpoint,error=NULL,finished_at=NULL", [job_id, kind, saved, store.now()])
     job = JobContext(job_id, lease_id, owner, local_day, {})
     stop = threading.Event()
     def heartbeat():
@@ -85,6 +111,8 @@ def execute(job_id, kind, local_day):
         stopped_for_pause = False
         if kind == "discovery":
             stopped_for_pause = discover(job) is False
+        elif kind == "community":
+            stopped_for_pause = promote_weekly(job) is False
         elif kind == "digest":
             with db.transaction():
                 job.assert_lease()
@@ -100,8 +128,8 @@ def execute(job_id, kind, local_day):
         with db.transaction():
             job.assert_lease()
             settings = store.get_settings()
-            external = kind in ("discovery", "maintenance", "priority")
-            paused = external and (stopped_for_pause or settings.budgetPaused or (settings.discoveryPaused if kind == "discovery" else settings.maintenancePaused))
+            external = kind in ("discovery", "maintenance", "priority", "community")
+            paused = external and (stopped_for_pause or _blocked(kind, settings))
             db.query("UPDATE jobs SET status=$1,finished_at=$2 WHERE id=$3", ["paused" if paused else "complete", store.now(), job_id])
     except Exception as error:
         logger.exception("%s job failed", kind)
@@ -132,13 +160,38 @@ def run_due_jobs():
     for kind, scheduled, day_matches in schedule:
         if day_matches and clock >= scheduled and (kind in ("digest", "backup") or config.github_token):
             db.query("INSERT INTO jobs(id,kind,status,checkpoint,started_at) VALUES($1,$2,'queued','{}',$3) ON CONFLICT(id) DO NOTHING", [f"{kind}:{day}", kind, store.now()])
+    community_week = closed_week(local, settings.timezone)
+    community_id = f"community:{community_week['weekStart']}"
+    if config.github_token:
+        db.query("INSERT INTO jobs(id,kind,status,checkpoint,started_at) VALUES($1,'community','queued','{}',$2) ON CONFLICT(id) DO NOTHING", [community_id, store.now()])
     queued = db.query("SELECT * FROM jobs WHERE status IN ('queued','running','paused') ORDER BY started_at")
     for row in queued:
         kind = row["kind"]
         current = store.get_settings()
         if _blocked(kind, current):
             continue
-        if row["status"] == "queued" and re.fullmatch(r"[a-z]+:\d{4}-\d{2}-\d{2}", row["id"]) and not row["id"].endswith(day):
+        obsolete_community = (kind == "community" and row["id"] < community_id
+                              and re.fullmatch(r"community:\d{4}-\d{2}-\d{2}", row["id"]))
+        if obsolete_community:
+            with db.transaction():
+                # Recheck under the writer lock: another worker may have frozen
+                # the batch or claimed its lease since the queue was read.
+                leases = db.query("SELECT expires_at FROM leases WHERE id='community'")
+                if leases and leases[0]["expires_at"] > store.now():
+                    continue
+                latest = db.query("SELECT status,checkpoint FROM jobs WHERE id=$1", [row["id"]])
+                if not latest or latest[0]["status"] not in ("queued", "running", "paused"):
+                    continue
+                try:
+                    checkpoint = json.loads(latest[0]["checkpoint"])
+                except (ValueError, TypeError):
+                    checkpoint = None
+                unfrozen = checkpoint == {} or (isinstance(checkpoint, dict) and set(checkpoint) == {"weekStart", "cutoff"})
+                if unfrozen:
+                    db.query("UPDATE jobs SET status='skipped',finished_at=$2 WHERE id=$1", [row["id"], store.now()])
+                    continue
+        stale_daily = kind != "community" and re.fullmatch(r"[a-z]+:\d{4}-\d{2}-\d{2}", row["id"]) and not row["id"].endswith(day)
+        if row["status"] == "queued" and stale_daily:
             db.query("UPDATE jobs SET status='skipped',finished_at=$2 WHERE id=$1 AND status='queued'", [row["id"], store.now()])
             continue
         execute(row["id"], kind, day)

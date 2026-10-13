@@ -231,12 +231,37 @@ class DatabaseCases:
     def test_fresh_schema_and_worker_readiness(self):
         schema.upgrade_schema()  # A repeat migration must accept its own ordinary constraints.
         worker._schema_ready(self.config, db)
-        self.assertEqual(db.query("SELECT version_num FROM alembic_version")[0]["version_num"], "0002_telegram_reviews")
+        self.assertIn(db.query("SELECT version_num FROM alembic_version")[0]["version_num"],
+                      ("0002_telegram_reviews", "0003_community_requests"))
         self.assertEqual(len(store.categories()), 9)
+
+    def test_additive_community_revision_preserves_telegram_readiness(self):
+        self.review()
+        before = db.query("SELECT * FROM telegram_reviews")
+        # Session 1 owns the additive migration. Readiness only needs its revision
+        # and the existing Telegram tables; no fake migration is installed here.
+        db.query("UPDATE alembic_version SET version_num='0003_community_requests'")
+        worker._schema_ready(self.config, db)
+        self.assertEqual(db.query("SELECT * FROM telegram_reviews"), before)
+
+    def test_additive_revision_does_not_hide_missing_telegram_tables(self):
+        db.query("UPDATE alembic_version SET version_num='0003_community_requests'")
+        db.query("DROP TABLE telegram_state")
+        with self.assertRaises(worker.WorkerError):
+            worker._schema_ready(self.config, db)
+
+    def test_unknown_revision_is_not_silently_accepted(self):
+        db.query("UPDATE alembic_version SET version_num='0099_unknown'")
+        with self.assertRaises(worker.WorkerError):
+            worker._schema_ready(self.config, db)
 
     def test_upgrade_preserves_baseline_rows(self):
         self.candidate()
         before = {table: db.query("SELECT * FROM " + table) for table in ("candidates", "settings", "categories")}
+        # Reconstruct an actual 0001 database even after Session 1's migration
+        # is integrated; otherwise its 0003 tables survive the test rewind.
+        db.query("DROP TABLE IF EXISTS community_contributions")
+        db.query("DROP TABLE IF EXISTS community_suggestions")
         db.query("DROP TABLE telegram_reviews")
         db.query("DROP TABLE telegram_state")
         db.query("UPDATE alembic_version SET version_num='0001_initial'")
