@@ -58,13 +58,44 @@ def _bound_review(token, owner, chat):
     return rows[0]
 
 
+def _suggest_metadata(draft, options):
+    """Use discovery's category when present; deterministic fallback needs no API call."""
+    draft = dict(draft)
+    if not draft.get("categories"):
+        text = " ".join([draft.get("name", ""), draft.get("description", ""), *draft.get("tags", [])]).lower()
+        terms = {
+            "creative-tools": r"photoshop|image editor|photo|video|design|drawing|audio",
+            "ai": r"\bai\b|agent|inference|pytorch|language model|decision engine",
+            "gaming": r"\bgame\b|gaming",
+            "privacy": r"privacy|encrypt|password|vpn",
+            "communication": r"chat|messag|email|video call",
+            "education": r"learn|education|math|guide|指南|阅读",
+            "development": r"develop|plugin|framework|library|programming|\bapi\b",
+            "productivity": r"notes|calendar|task|productivity",
+        }
+        allowed = {c["id"] for c in options["categories"]}
+        category = next((key for key, pattern in terms.items() if key in allowed and re.search(pattern, text)), None)
+        if category is None and "utilities" in allowed:
+            category = "utilities"
+        if category:
+            draft["categories"] = [category]
+    if draft.get("costModel") == "Needs review" and draft.get("license") in {
+        "MIT", "Apache-2.0", "BSD-2-Clause", "BSD-3-Clause", "ISC", "MPL-2.0",
+        "GPL-2.0", "GPL-3.0", "GPL-2.0-only", "GPL-3.0-only",
+        "GPL-2.0-or-later", "GPL-3.0-or-later", "AGPL-3.0", "AGPL-3.0-only",
+        "AGPL-3.0-or-later", "Unlicense", "CC0-1.0", "CC-BY-4.0",
+    }:
+        draft["costModel"] = "Free"
+    return draft
+
+
 def _view(row) -> ReviewView:
     return {
         "token": row["token"], "repo_id": row["repo_id"],
         "candidate_revision": row["candidate_revision"], "draft_version": row["draft_version"],
         "status": row["status"], "expires_at": row["expires_at"],
         "message_id": row["message_id"], "app_slug": row["app_slug"],
-        "data": json.loads(row["draft"]), "assessment": json.loads(row["assessment"]),
+        "data": _suggest_metadata(json.loads(row["draft"]), json.loads(row["options"])), "assessment": json.loads(row["assessment"]),
         "options": json.loads(row["options"]), "confirmed": json.loads(row["confirmed"]),
     }
 
@@ -191,14 +222,14 @@ def reset_delivery(token: str, expected_message_id: int, *, owner_user_id: int, 
 
 def _action(expected_version, action, value):
     _integer(expected_version, 1, MAX_VERSION, "Use a valid review version.")
-    if not isinstance(action, str) or action not in (*FIELDS, "safe", "approve", "reject"):
+    if not isinstance(action, str) or action not in (*FIELDS, "safe", "approve", "accept", "more", "reject"):
         raise InputError("Unknown review action.")
     if action in FIELDS:
         if (not isinstance(value, str) or not re.fullmatch(r"0|[1-9][0-9]{0,9}", value, re.ASCII)
                 or int(value) > MAX_VERSION):
             raise InputError("Choose a valid review option.")
         return int(value)
-    if (action == "safe" and value != "yes") or (action in ("approve", "reject") and value is not None):
+    if (action == "safe" and value != "yes") or (action in ("approve", "accept", "more", "reject") and value is not None):
         raise InputError("Invalid review action value.")
     return None
 
@@ -244,14 +275,18 @@ def apply_action(token: str, expected_version: int, action: str, value: str | No
             return _result(row, "stale", "This button is outdated. Review the current choices.")
         if action in (*FIELDS, "safe"):
             return _select(row, action, index)
-        if action == "approve":
+        if action == "more":
+            return _result(row, "details", "")
+        if action in ("approve", "accept"):
             confirmed = json.loads(row["confirmed"])
-            if not all(confirmed.get(key) is True for key in ("category", "type", "cost", "safe")):
+            if action == "approve" and not all(confirmed.get(key) is True for key in ("category", "type", "cost", "safe")):
                 return _result(row, "blocked", "Explicitly confirm category, software type, cost and safe content first.")
             if json.loads(row["snapshot"]).get("nsfw"):
                 return _result(row, "blocked", "Known NSFW candidates cannot be approved through Telegram.")
             try:
-                data = Metadata.model_validate_json(row["draft"])
+                draft = (_suggest_metadata(json.loads(row["draft"]), json.loads(row["options"]))
+                         if action == "accept" else json.loads(row["draft"]))
+                data = Metadata.model_validate(draft)
             except ValidationError:
                 return _result(row, "blocked", "Listing metadata is invalid. Review the candidate in web administration.")
             if data.repoId != row["repo_id"]:
@@ -263,6 +298,9 @@ def apply_action(token: str, expected_version: int, action: str, value: str | No
             if store.get_settings().publicationPaused:
                 return _result(row, "blocked", "Publication is paused.")
             # Do not catch store/audit failures here: the outer transaction must roll back.
+            if action == "accept":
+                row["draft"] = store.encode(data)
+                db.query("UPDATE telegram_reviews SET draft=$1 WHERE token=$2", [row["draft"], token])
             row["app_slug"] = store.approve_candidate(row["repo_id"], row["candidate_revision"], data)
             status, message = "approved", "App approved and published."
         else:

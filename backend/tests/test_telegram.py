@@ -247,6 +247,54 @@ class DatabaseCases:
             self.assertEqual(db.query("SELECT * FROM " + table), rows)
         worker._schema_ready(self.config, db)
 
+    def test_simple_card_accept_and_more(self):
+        review = self.review(description="An image editor for photos. Extra details for advanced users.")
+        payload = bot.render_review(review, app_url=self.config.app_url, environment="verification")
+        buttons = [b for row in payload["reply_markup"]["inline_keyboard"] for b in row]
+        self.assertEqual([b["text"] for b in buttons], ["Open repo", "Accept", "Reject", "More"])
+        self.assertIn("An image editor for photos. Extra details for advanced users.", payload["text"])
+        client = FakeTelegram([callback(review, "more")])
+        self.run_bot(client)
+        expanded = [p for m, p in client.calls if m == "editMessageText"][0]
+        self.assertIn("Creative Tools", expanded["text"])
+        self.assertEqual(store.list_apps(), [])
+        client = FakeTelegram([callback(review, "accept", update_id=2)])
+        self.run_bot(client)
+        apps = store.list_apps()
+        self.assertEqual(len(apps), 1)
+        self.assertEqual(apps[0]["categories"], ["creative-tools"])
+        self.assertEqual(apps[0]["costModel"], "Free")
+        self.assertEqual(self.select(review, "accept")["outcome"], "already_done")
+
+    def test_card_keeps_three_sentences_and_known_metadata(self):
+        review = self.review(
+            description="An editor for photos. It supports layers and masks. Built for designers. More technical details follow.",
+            platforms=["macOS"], type="Desktop app", overrides=["type"],
+        )
+        payload = bot.render_review(review, app_url=self.config.app_url, environment="verification")
+        self.assertIn("An editor for photos. It supports layers and masks. Built for designers.", payload["text"])
+        self.assertNotIn("More technical details follow.", payload["text"])
+        for line in ("Category: Creative Tools", "Type: Desktop app", "Platforms: macOS", "Cost: Free", "License: MIT"):
+            self.assertIn(line, payload["text"])
+        expanded = bot.render_review(review, app_url=self.config.app_url, environment="verification", expanded=True)
+        self.assertIn("More technical details follow.", expanded["text"])
+
+    def test_card_omits_unknown_metadata_and_unverified_default_type(self):
+        review = self.review(license="", description="A useful tool.")
+        payload = bot.render_review(review, app_url=self.config.app_url, environment="verification")
+        for label in ("Type:", "Platforms:", "Cost:", "License:", "Needs review", "Unknown"):
+            self.assertNotIn(label, payload["text"])
+
+    def test_accept_keeps_publication_guards(self):
+        review = self.review(nsfw=True)
+        self.assertEqual(self.select(review, "accept")["outcome"], "blocked")
+        self.assertEqual(store.list_apps(), [])
+
+    def test_accept_does_not_guess_unknown_free_use(self):
+        review = self.review(license="")
+        self.assertEqual(self.select(review, "accept")["outcome"], "blocked")
+        self.assertEqual(store.list_apps(), [])
+
     def test_identity_and_required_confirmation(self):
         review = self.review()
         for identity in ({"owner_user_id": 222, "chat_id": OWNER}, {"owner_user_id": OWNER, "chat_id": 222}):
@@ -277,35 +325,35 @@ class DatabaseCases:
     def test_old_button_and_refreshed_candidate_cannot_publish(self):
         review = self.ready()
         edited = self.select(review, "cost", "1")["review"]
-        stale = self.select(review, "approve")
+        stale = self.select(review, "accept")
         self.assertEqual(stale["outcome"], "stale")
         self.assertEqual(stale["review"]["status"], "open")
         self.candidate()
-        self.assertEqual(self.select(edited, "approve")["review"]["status"], "stale")
+        self.assertEqual(self.select(edited, "accept")["review"]["status"], "stale")
         self.assertEqual(store.list_apps(), [])
 
     def test_expiry_renews_without_reviving_old_token(self):
         review = self.ready()
         db.query("UPDATE telegram_reviews SET expires_at='2000-01-01T00:00:00.000Z' WHERE token=$1", [review["token"]])
-        self.assertEqual(self.select(review, "approve")["outcome"], "expired")
+        self.assertEqual(self.select(review, "accept")["outcome"], "expired")
         fresh = reviews.prepare_reviews(**IDENTITY)[0]
         self.assertNotEqual(fresh["token"], review["token"])
         self.assertFalse(any(fresh["confirmed"].values()))
 
     def test_nsfw_paused_publication_and_removed_category_are_blocked(self):
         review = self.ready(nsfw=True)
-        self.assertEqual(self.select(review, "approve")["outcome"], "blocked")
+        self.assertEqual(self.select(review, "accept")["outcome"], "blocked")
         db.query("DELETE FROM telegram_reviews")
         db.query("DELETE FROM candidates")
         review = self.ready()
         settings = store.get_settings()
         settings.publicationPaused = True
         store.write_settings(settings)
-        self.assertEqual(self.select(review, "approve")["outcome"], "blocked")
+        self.assertEqual(self.select(review, "accept")["outcome"], "blocked")
         settings.publicationPaused = False
         store.write_settings(settings)
         db.query("DELETE FROM categories WHERE id=$1", [review["data"]["categories"][0]])
-        self.assertEqual(self.select(review, "approve")["outcome"], "blocked")
+        self.assertEqual(self.select(review, "accept")["outcome"], "blocked")
         self.assertEqual(store.list_apps(), [])
 
     def test_failure_after_publication_rolls_back_everything(self):
@@ -317,7 +365,7 @@ class DatabaseCases:
                 raise RuntimeError("Synthetic audit failure")
             real_audit(action, data)
         with patch.object(store, "audit", side_effect=failing_audit), self.assertRaises(RuntimeError):
-            self.select(review, "approve")
+            self.select(review, "accept")
         self.assertEqual(store.list_apps(), [])
         self.assertEqual(store.candidates()[0]["status"], "pending")
         self.assertEqual(store.get_settings().revision, revision)
@@ -331,7 +379,7 @@ class DatabaseCases:
             barrier.wait(timeout=5)
             try:
                 if telegram:
-                    return self.select(review, "approve")["outcome"]
+                    return self.select(review, "accept")["outcome"]
                 return store.approve_candidate("100", 1, Metadata.model_validate(review["data"]))
             except InputError:
                 return "stale"
@@ -435,7 +483,7 @@ class DatabaseCases:
         review = self.ready(description="🧪" * 4000)
         payload = bot.render_review(review, app_url=self.config.app_url, environment="verification")
         self.assertLessEqual(len(payload["text"].encode("utf-16-le")) // 2, 4096)
-        self.assertIn("uncertain", payload["text"])
+        self.assertNotIn("uncertain", payload["text"])
         for row in payload["reply_markup"]["inline_keyboard"]:
             for button in row:
                 if "callback_data" in button:
