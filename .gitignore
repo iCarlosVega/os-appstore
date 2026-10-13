@@ -6,6 +6,7 @@ node_modules/
 .env
 .env.*
 !.env.example
+!.env.development.example
 *.tsbuildinfo
 coverage/
 .DS_Store

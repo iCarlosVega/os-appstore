@@ -1,10 +1,11 @@
 import { spawn } from "node:child_process";
 import { existsSync } from "node:fs";
 import { resolve } from "node:path";
-if (existsSync(".env")) process.loadEnvFile(".env");
+if (process.env.STORE_LOCAL !== "1" && existsSync(".env")) process.loadEnvFile(".env");
 const env = { ...process.env, BACKEND_URL: process.env.BACKEND_URL || `http://127.0.0.1:${process.env.API_PORT || "8000"}` };
 const backend = spawn(process.execPath, ["scripts/backend.mjs", "serve", "--reload"], { stdio: "inherit", env });
-const frontend = spawn(process.execPath, [resolve("node_modules/next/dist/bin/next"), "dev", ...process.argv.slice(2)], { stdio: "inherit", env });
+const frontendOptions = process.env.STORE_LOCAL === "1" ? ["--hostname", "127.0.0.1", "--port", "3000"] : process.argv.slice(2);
+const frontend = spawn(process.execPath, [resolve("node_modules/next/dist/bin/next"), "dev", ...frontendOptions], { stdio: "inherit", env });
 let stopping = false;
 function stop(code) {
   if (stopping) return;

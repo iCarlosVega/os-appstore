@@ -22,6 +22,10 @@ backend/
   app/discord.py       Owner notifications
   app/backup.py        Database snapshots and retention
   app/cli.py           Migrate, worker, and backup commands
+  app/telegram_worker.py  Separate opt-in Telegram poller and bot-scoped lease
+  app/telegram_bot.py     Owner-only review cards and update controller
+  app/telegram_api.py     Bounded Telegram Bot API transport
+  app/telegram_review.py  Durable review drafts, actions and polling offsets
   requirements.txt
   Dockerfile
 src/app/               Next.js pages and administration UI
@@ -31,7 +35,7 @@ src/lib/backend.ts     Server-side HTTP client; no database/provider logic
 migrations/            Shared database schema
 ```
 
-Next.js does not read the database, execute jobs, or call GitHub/Jev directly. FastAPI validates incoming data with Pydantic and owns all writes and authorization. The proxy preserves `/api/*` URLs and owner cookies on the frontend origin, so public accounts and cross-origin browser calls are unnecessary.
+Next.js does not read the database, execute jobs, or call Jev. It fetches public GitHub READMEs for listing display; FastAPI handles repository discovery/metadata, validates incoming data with Pydantic, and owns all writes and authorization. The proxy preserves `/api/*` URLs and owner cookies on the frontend origin, so public accounts and cross-origin browser calls are unnecessary.
 
 ## Run locally
 
@@ -70,6 +74,67 @@ backend/.venv/bin/python -m uvicorn app.main:app --app-dir backend --reload --ho
 Use `PYTHON` to select a different interpreter, and `API_PORT`/`API_HOST` to change the development API listener. If changing ports, update `BACKEND_URL`; update `APP_URL` and OAuth callback when changing the browser origin. Production web and API are started separately.
 
 The launchers load the root `.env` and preserve explicit shell overrides. Relative `SQLITE_PATH` and `BACKUP_DIR` values resolve against the repository root for both the API and worker.
+
+### Isolated local PostgreSQL and catalog snapshot
+
+Use the dedicated `local:*` commands to develop against PostgreSQL without changing the existing SQLite file or targeting Railway. This workflow requires the migration, catalog-import and runtime lanes to be integrated first. Commands report missing migration/import resources rather than substituting another implementation.
+
+Install dependencies **in this worktree**, then create the local configuration:
+
+```sh
+npm ci
+python3 -m venv backend/.venv
+backend/.venv/bin/python -m pip install -r backend/requirements.txt
+npm run local:setup
+```
+
+The isolated local launcher requires a POSIX host such as macOS or Linux; it refuses Windows because the existing launchers cannot reliably stop descendant processes there. The original non-local workflow remains available on Windows. Setup creates a git-ignored `.env.development.local` with a random URL-safe password and owner-only permissions. It never overwrites an existing file. Keep that file with the persistent database: changing its password does not change a password already stored in a PostgreSQL volume. `.env.development.example` documents the settings; do not copy production credentials into it or the local file.
+
+Start a local Docker engine with Compose v2 or later, and stop any API/frontend already occupying ports 8000/3000 explicitly before switching. The wrapper does not stop existing services. Then:
+
+```sh
+npm run local:db:up
+npm run local:db:migrate
+npm run local:catalog:import
+# Review the preview counts, then explicitly insert the snapshot:
+npm run local:catalog:import -- --apply
+npm run local:dev
+```
+
+In another terminal in the same worktree:
+
+```sh
+npm run local:jobs
+# Or process due work once:
+npm run local:jobs -- --once
+```
+
+`local:dev` runs Next.js and Uvicorn with reload at `http://localhost:3000` and `http://127.0.0.1:8000`; both listeners bind to loopback. The worker is separate and requires an explicit restart after code/config changes. API startup does not migrate PostgreSQL: run `local:db:migrate` before starting services and again after integrating schema changes. Schema migration and catalog import are separate operations; the importer never initializes the database.
+
+`compose.local.yaml` contains only PostgreSQL 17 (`postgres:17-bookworm`). It uses project `os-appstore-local`, persistent volume `os-appstore-local_database`, database `os_appstore_development`, and host port **127.0.0.1:55432**. Production `compose.yaml` is separate. The wrapper requires a local Unix Docker socket, waits for database health on startup, and refuses occupied ports. Concurrent worktrees share these fixed local ports/project, so run only one integrated local stack at a time.
+
+All local commands except setup read only `.env.development.local`. Its values take precedence over inherited shell application settings. The wrapper forces development mode, the endpoints above, worktree-local Python/SQLite paths and `.data/local-postgres/backups`. `DATABASE_URL` must be exactly `postgresql://store:PASSWORD@127.0.0.1:55432/os_appstore_development`, with a matching URL-safe `POSTGRES_PASSWORD`; alternate hosts, ports, databases, socket/service/multihost URLs and query overrides are rejected before launching anything. Inherited `PG*` connection overrides are removed. No URL or password is printed in wrapper errors.
+
+Node launchers skip `.env` in local mode. Python requires an absolute `STORE_ENV_FILE`, loads only that file without interpolation, validates the dedicated destination, and pins application settings. GitHub OAuth/owner/auth/token, TypeSafe, Discord and proxy credentials default to explicit empty strings unless set in the local file. Telegram defaults to `TELEGRAM_ENABLED=0` and blank token/owner/chat, even if shell or fallback env files contain Telegram credentials. The default model is explicitly `jev-1.13.0`. Next.js may inspect its usual fallback env files, but these application values already exist in its process environment and cannot be replaced. Ordinary non-local commands retain their previous loading behavior; use `local:*` consistently for this stack.
+
+Local owner administration requires a separate GitHub OAuth app with callback `http://localhost:3000/api/auth/callback`, plus explicitly configured local owner ID/auth secret. Discovery needs a local GitHub token. Paid AI starts disabled in database settings; a key alone does not enable it. Notifications need an explicitly configured webhook. Enabling these integrations can make external calls; blank defaults keep them unconfigured.
+
+The catalog importer defaults to a preview using only public `GET /api/catalog` and `/api/categories` from `https://os-appstore.vercel.app`. `--apply` inserts missing apps/categories in one transaction. Repeated imports skip matching app identities even after local edits/unpublication, preserve existing category definitions and local counters, and reject conflicting identities/categories rather than overwrite them. Imported click counts start at zero; private production records/settings are not copied. If the two public responses are inconsistent, retry the preview later. An alternative HTTPS origin can be supplied with `-- --source-url https://example.com`; the importer validates it. This is a snapshot, not ongoing synchronization, and does not write to production.
+
+Ctrl+C stops the foreground dev process or worker; stop both separately before shutting down the database. Database logs and shutdown:
+
+```sh
+docker compose --env-file .env.development.local -p os-appstore-local -f compose.local.yaml logs -f db
+npm run local:db:down
+```
+
+`local:db:down` keeps the database volume; the next `local:db:up` reuses it. Do not add `-v` or remove volumes if you need the records. With the integrated backend and PostgreSQL 17 client tools (`pg_dump`/`pg_restore`) installed locally, create a backup using the same guarded Python configuration:
+
+```sh
+STORE_LOCAL=1 STORE_ENV_FILE="$PWD/.env.development.local" backend/.venv/bin/python -m backend.app.cli backup
+```
+
+The worker also schedules backups under `.data/local-postgres/backups`. Stop API/worker before recovery, preserve the volume and local env, and follow the backup/restore instructions below. Review migration failures before retrying: never blindly stamp an incompatible schema or drop populated tables to make migration succeed. Restore into a separate empty recovery database and review it before switching; ordinary local commands deliberately reject other destinations. The previous `.data/store.sqlite` and root `.env` remain available for the original non-local workflow.
 
 ### Background worker
 
@@ -112,6 +177,55 @@ Sign in at `/admin`, add official GitHub repository URLs under Settings → Seed
 
 Owner corrections made during initial approval or later editing are preserved as manual overrides. Repository identity, URL, license, and supplied cost/category changes become private proposals. Review shows current and proposed eligibility/categories, and approval requires both the proposal and listing revisions to match. Missing cost/category evidence in legacy proposals keeps approved values. The current GitHub adapter does not supply cost/category change evidence; its unknown defaults cannot erase approved values. Replacement repositories cannot supply new public metadata before identity approval. Rejected repository IDs remain suppressed until explicitly reopened. Missing repositories keep the approved destination with an availability warning; inactive projects are downranked. Descriptions remain upstream or owner-authored.
 
+### Telegram candidate approvals
+
+Telegram review runs in its own process, independently of the API and discovery/jobs worker. GitHub OAuth is not required for Telegram review; web administration still uses GitHub OAuth. Discovery still needs its existing configuration. Telegram never automatically approves candidates.
+
+The integrated feature has passed disposable behavioral verification of authorization, stale/duplicate callbacks, transaction rollback and restart recovery. Run the repeatable gate with `backend/.venv/bin/python -m unittest discover -s backend/tests -p test_telegram.py -v`; it requires Docker and a locally available `postgres:17` image, creates/removes temporary databases, and mocks Telegram. These operating instructions do not themselves create a bot or activate Telegram.
+
+Create a dedicated local bot through the official [BotFather](https://core.telegram.org/bots/features#botfather) `/newbot` flow and store its token privately. Use a different bot/token for each database, including local and production. Never commit tokens, use a `NEXT_PUBLIC_` setting, or put token-bearing request URLs in logs, shell history or screenshots. Configure these four values in `.env.development.local` for `local:*`, or in the ordinary backend environment for non-local operation:
+
+```dotenv
+TELEGRAM_ENABLED=0
+TELEGRAM_BOT_TOKEN=
+TELEGRAM_OWNER_USER_ID=
+TELEGRAM_CHAT_ID=
+```
+
+Keep the worker stopped while identifying the owner/chat. In Telegram, open a **private** conversation with your own bot and send `/start`. Inspect the authenticated Bot API `getUpdates` result using a trusted local client that keeps the token and full response private. Take the owner's numeric `message.from.id` and `message.chat.id`, verify `message.chat.type` is `private`, and verify that update came from your own account. Do not run a second update consumer while the worker is active. Usernames, group/channel IDs and whoever happens to send the first `/start` never establish trust. Both configured IDs must be canonical positive decimals (no whitespace, signs or leading zeros), at most `4503599627370495`; the worker requires both exact IDs on incoming commands/callbacks.
+
+Back up the intended database, then explicitly migrate it with the integrated release **before** enabling Telegram. For the isolated local workflow, after installing this worktree's dependencies and running `local:setup`:
+
+```sh
+npm run local:db:up
+npm run local:db:migrate
+# Privately fill the local bot token and owner/chat IDs, then set TELEGRAM_ENABLED=1.
+npm run local:telegram
+```
+
+For the ordinary environment, use `npm run db:migrate`, configure the intended database and frontend `APP_URL`, set the four Telegram values with `TELEGRAM_ENABLED=1`, then run `npm run telegram`. Only exactly `1` enables the worker. An absent/disabled flag or missing/malformed credentials exits before DB/network access. Local Node and Python loaders pin all four Telegram values to the local file or disabled/blank defaults; inherited shell credentials and Next.js fallback env files cannot enable local Telegram. Existing local env files are not overwritten by `local:setup`; add the four values privately if your file predates them.
+
+| Command | Behavior |
+| --- | --- |
+| `npm run telegram` | Ordinary environment, continuous polling |
+| `npm run telegram:once` | Ordinary environment, one iteration with zero-second poll timeout |
+| `npm run local:telegram` | Guarded local environment, continuous polling |
+| `npm run local:telegram:once` | Guarded local environment, one iteration with zero-second poll timeout |
+
+Direct equivalents are `python -m app.telegram_worker [--once]` from `backend/` using its venv, or `backend/.venv/bin/python -m backend.app.telegram_worker [--once]` from the repository root. Direct local invocation also requires `STORE_LOCAL=1` and an absolute `STORE_ENV_FILE` pointing at this worktree's local file. `--once` may send real cards and process real approvals; it is not a dry run. API and discovery startup never starts Telegram. The existing Docker Compose definitions do not start this additional process; a future production deployment must explicitly provision a separate Telegram worker with its own production bot, database and `APP_URL`.
+
+Startup accepts schema revision `0002_telegram_reviews` or additive `0003_community_requests`, checks required Telegram tables and initialized settings with read-only queries, and never initializes/migrates schema. SQLite readiness cannot create a missing file. It verifies the bot with `getMe`, checks `getWebhookInfo`, and refuses a configured webhook with instructions to review/remove it deliberately. The worker never deletes webhooks or drops pending updates automatically. Missing lane modules/dependencies fail with an integration message.
+
+Pending candidates, including the backlog, are delivered at most five new cards per iteration. Only the configured private owner/chat can use `/start`, `/help` and `/pending`; `/pending` uses the same bounded delivery budget. Each card names its environment and repository and shows listing facts, activity, unknown fields and assessment flags. Explicitly select a category, software type and free-use cost model, confirm non-NSFW content, review the current summary, then publish that exact draft or reject it. Suggestions require confirmation too. Only `Free` and `Free with optional paid features` qualify; known NSFW candidates remain blocked. Unknown optional facts are preserved. Reviews expire after seven days; refreshed candidates, edited drafts and stale confirmation buttons cannot publish an earlier snapshot. Approval uses the existing store validation/transaction and preserves manual overrides.
+
+One renewable database lease, **`telegram:<bot_id>`**, covers every owner/chat configuration for that bot. It expires after 90 seconds and renews every 20 seconds; a second poller fails clearly and lease loss stops processing. Polling uses at most 20 updates, a 20-second poll timeout and a 30-second HTTP timeout. Only transient transport and rate-limit failures retry, using interruptible backoff capped at 60 seconds. Other permanent failures stop safely without raw provider errors or token URLs.
+
+Offsets are durable, monotonic and scoped to **`telegram:<bot_id>:<owner_user_id>:<chat_id>`**. Restart resumes the saved offset after completed/ignored updates. Replayed final actions cannot publish twice. Delivery is at least once: a crash after sending but before storing the message ID can duplicate a card, but both cards use the same review token and publication remains idempotent. An unchanged edit or expired callback acknowledgement is nonfatal. An unavailable open card becomes eligible for bounded resend; terminal publication stands even when its success-message edit fails.
+
+Stop with Ctrl+C or SIGTERM. Backoff stops immediately. PostgreSQL statements and lock waits in this worker, including its heartbeat, have a 10-second timeout; other workers retain their defaults. Database connections and SQLite busy waits also have 10-second timeouts. HTTP uses a 30-second inactivity timeout for each socket operation, rather than an overall request deadline: a response that keeps making progress can take longer, and shutdown waits for the active request to return. Normal shutdown closes the client and releases only this process's lease. After a crash or failed database cleanup, allow the 90-second lease to expire before retrying. Restart explicitly after code/config changes. To disable, stop the process and set `TELEGRAM_ENABLED=0`; stored reviews/audit/offsets stay available. Stop Telegram along with API/jobs before database recovery.
+
+Database leases cannot coordinate **different databases**: separate databases must use separate bots even if each has only one worker. Before changing owner/chat, stop the previous consumer and verify the new identity privately. Telegram may already have acknowledged earlier updates, so changing owner/chat or offset keys cannot recover an old per-user inbox. No automatic enrollment, bulk approval or production activation is provided.
+
 ### Default schedules
 
 Timezone: **America/New_York**, editable in Settings.
@@ -122,9 +236,61 @@ Timezone: **America/New_York**, editable in Settings.
 | Priority refresh | Daily, 03:00 |
 | Full metadata refresh | Sunday, 03:00 |
 | Backup | Daily, 03:30 |
+| Community suggestions | Monday, 00:05; cutoff 00:00 |
 | Discord digest | Monday, 09:00 |
 
 Discovery considers at most 100 repository URLs/run and adds at most 10 new candidates/day by default. Growth is unknown until a later star observation. Jobs use durable IDs, leases, and checkpoints; interrupted/paused runs survive midnight. Failed job kinds wait for owner resumption in Operations. Run only the Python worker after switching from the original TypeScript backend.
+
+## Community app suggestions
+
+Visitors can search public GitHub projects at `/request`, paste a repository URL, or submit an idea without a repository. Search uses GitHub best matches and shows at most ten results; stars do not determine weekly ranking. Backend verification supplies repository facts. Visitors may recommend their own projects using the same flow.
+
+The signed HttpOnly browser cookie lasts 180 days. One canonical numeric repository ID and one signed browser identifier count once, enforced by a database constraint. Stored contribution keys are pseudonymous HMACs, not raw cookies or IP addresses. Deleting cookies or using another device can count again; counts approximate browsers, not unique people. Idea-only and historical requests remain manual requests and create no votes.
+
+At Monday 00:05 in Settings' timezone, the job freezes up to 30 eligible repositories using contributions received strictly before Monday 00:00. Ranking uses cumulative browser counts, then earliest contribution and numeric repository ID. Up to ten become pending candidates; the backlog carries forward. This cap is independent of discovery's daily quota. A restart catches up the latest eligible closed week; previously frozen unfinished batches retain their order, counts and cap. Pauses and failures preserve progress. Operations exposes the `community` job for review/resumption; manual retries cannot reset a week's limit.
+
+Existing catalog entries and candidates, including rejected candidates, are excluded. Archived or unavailable repositories are skipped with bounded backfill; transient provider failures wait for resumption. Candidate creation, queue marking and checkpoint advance commit together under lease. Selection makes no AI calls, never publishes automatically and retains unknown metadata for owner review. The Telegram worker delivers the existing Open repo / Accept / Reject / More cards when online. Only an authorized owner approval publishes.
+
+Archived, missing or identity-changed suggestions retain their contributions but are deferred from later rankings using their durable skip audit. A newer server-verified, nonarchived submission makes the project eligible for revalidation; another archived submission does not. Expiry of the existing one-year audit retention also permits a later recheck. This prevents unavailable leaders from occupying all 30 evaluation slots every week while preserving the backlog and review history.
+
+Search caches provider facts for five minutes but refreshes store status on every response. Ten searches/lookups per address per minute and ten uncached provider operations per minute across backend processes limit GitHub usage. Submission keeps the existing five-attempt hourly address limit. Search failure still permits repository pasting and idea-only requests.
+
+### Community rollout and rollback
+
+The integration branch and disposable tests do not activate production. Release separately against the intended database:
+
+1. Confirm the target database, frontend/backend URLs and deployed revision privately. Stop API/jobs/Telegram for the migration window. Take `npm run backup` with that target's environment, copy the completed backup to independent storage, and test restore into a separate disposable database. Compare catalog, candidate/review, request and polling-offset records before proceeding. See [backup and restore](#backup-restore-rollback).
+2. Configure a stable `AUTH_SECRET` of at least 32 characters, a server-only `GITHUB_TOKEN`, matching frontend/backend `BACKEND_PROXY_SECRET`, frontend `BACKEND_URL` and backend `APP_URL`. Keep credentials out of `NEXT_PUBLIC_*`. Review existing settings, budget/discovery/publication pauses and failed kinds. Use a distinct Telegram bot for each database.
+3. Explicitly run `npm run db:migrate` in the intended ordinary backend environment. This adds `0003_community_requests` without converting historical requests into votes. PostgreSQL startup never silently migrates. Check the revision and existing records, then start API/frontend. For the existing guarded local environment, use `npm run local:db:migrate` only after verifying its local target; parallel worker worktrees must not run it.
+4. Start one jobs worker with `npm run jobs` and one configured bot poller with `npm run telegram`. API startup does not start either. Telegram must be configured/enabled deliberately. Verify the configured timezone and next Monday 00:05, the dated `community:<closed-week-Monday>` job after it becomes due, and its checkpoint, candidate count and queue state. Catch-up may run immediately after deployment when a closed week is eligible.
+5. Verify search, selection, duplicate submission, signed cookie retention and owner-visible counts. Confirm candidates are absent from the public catalog until owner acceptance, and verify delivery/approval with the intended bot as a separate authorized live check. A missing GitHub token, discovery/budget/publication pause or failed community kind prevents processing; AI pause alone does not.
+
+To halt selection, set `discoveryPaused` (also pauses automated discovery), stop the jobs worker, or pause publication as appropriate. Stop the bot before recovery. Retain suggestion/contribution/review history: migration 0003 deliberately refuses destructive downgrade. Prefer a compatible application rollback that still understands 0003 and Telegram readiness. If database recovery is necessary, restore the verified backup into a new database, review records and switch all API/jobs/bot connections together. Keep the old database for investigation; never run writers or the same bot against both databases.
+
+### Repeatable isolated verification
+
+Requires installed dependencies, Docker and a locally available `postgres:17` image. The backend suite creates/removes dedicated temporary SQLite and PostgreSQL databases, guards destinations and mocks provider HTTP:
+
+```sh
+backend/.venv/bin/python -m unittest discover -s backend/tests -v
+node scripts/verify-community-ui.mjs
+npm run typecheck
+npm run build
+```
+
+For the real Next proxy and browser smoke, build first, then use two terminals in an isolated checkout with no environment files:
+
+```sh
+backend/.venv/bin/python -m backend.tests.test_community_integration --serve-fixture
+```
+
+```sh
+env -i PATH="$PATH" NODE_ENV=production NEXT_TELEMETRY_DISABLED=1 \
+  BACKEND_URL=http://127.0.0.1:3184 BACKEND_PROXY_SECRET=synthetic-proxy \
+  node node_modules/next/dist/bin/next start --hostname 127.0.0.1 --port 3183
+```
+
+Then run `backend/.venv/bin/python -m backend.tests.test_community_integration --verify-proxy` once against the fresh fixture and open `http://127.0.0.1:3183/request` for keyboard/mobile checks. These fixed loopback ports must be free. The real API fixture uses only temporary SQLite, synthetic GitHub/Telegram HTTP and synthetic credentials. Restart it for a fresh count/rate-limit state. Stop both processes with Ctrl+C afterward. It never starts jobs or a live Telegram poller. Keep the browser on this fixture for test submissions.
 
 ## Spending controls
 
@@ -191,7 +357,7 @@ npm run typecheck
 npm run build
 ```
 
-No application tests were added/run under the current session instruction. Compilation/import checks do not prove endpoint or live integration correctness. The development environment blocks network listeners, browser access, Docker, and registry DNS; dependencies were provisioned from available local distributions.
+The community integration gate exercises real migrated PostgreSQL/SQLite state and mocked GitHub/Telegram transports, including submission through owner acceptance, cutoff/frozen ranking, rollback, leases and existing review preservation. Separate Next proxy verification checks the signed-cookie roundtrip. These tests do not establish live provider behavior, production capacity or deployed configuration; use the rollout checks above for the intended release.
 
 Search initially matches the published catalog in memory, returns up to 100 results, and ranks at most 20 candidates with Jev. Add indexed database retrieval and pagination when the collection grows. Download clicks count button activations, not completed installations or unique users. Metadata extraction is conservative and needs owner review. No public accounts, reviews, ratings, binary mirroring, installation, or malware scanning are included.
 

@@ -1,11 +1,40 @@
 import os
-from dataclasses import dataclass
+import re
+from dataclasses import dataclass, field
 from pathlib import Path
-from dotenv import load_dotenv
+from dotenv import dotenv_values, load_dotenv
 
 ROOT = Path(__file__).resolve().parents[2]
-load_dotenv(ROOT / ".env")
-load_dotenv(ROOT / "backend" / ".env")
+if os.getenv("STORE_LOCAL") == "1":
+    env_file = Path(os.getenv("STORE_ENV_FILE", ""))
+    if not env_file.is_absolute() or not env_file.is_file():
+        raise RuntimeError("Local mode requires an absolute STORE_ENV_FILE; use npm run local:setup and local:* commands.")
+    local = dotenv_values(env_file, interpolate=False)
+    database = local.get("DATABASE_URL", "") or ""
+    password = local.get("POSTGRES_PASSWORD", "") or ""
+    if not re.fullmatch(r"[A-Za-z0-9_-]+", password) or database != f"postgresql://store:{password}@127.0.0.1:55432/os_appstore_development":
+        raise RuntimeError("Local DATABASE_URL must match POSTGRES_PASSWORD and the dedicated loopback PostgreSQL destination; see .env.development.example.")
+    # libpq can use PGHOSTADDR instead of the hostname in DATABASE_URL.
+    for key in list(os.environ):
+        if key.startswith("PG"):
+            del os.environ[key]
+    os.environ.update({key: local.get(key) or "" for key in (
+        "GITHUB_CLIENT_ID", "GITHUB_CLIENT_SECRET", "OWNER_GITHUB_ID", "AUTH_SECRET",
+        "GITHUB_TOKEN", "TYPESAFE_API_KEY", "DISCORD_WEBHOOK_URL", "BACKEND_PROXY_SECRET",
+    )})
+    os.environ.update(
+        TELEGRAM_ENABLED=local.get("TELEGRAM_ENABLED") or "0",
+        TELEGRAM_BOT_TOKEN=local.get("TELEGRAM_BOT_TOKEN") or "",
+        TELEGRAM_OWNER_USER_ID=local.get("TELEGRAM_OWNER_USER_ID") or "",
+        TELEGRAM_CHAT_ID=local.get("TELEGRAM_CHAT_ID") or "",
+        DATABASE_URL=database, APP_ENV="development", APP_URL="http://localhost:3000",
+        TYPESAFE_MODEL=local.get("TYPESAFE_MODEL") or "jev-1.13.0",
+        SQLITE_PATH=str(ROOT / ".data/local-postgres/unused.sqlite"),
+        BACKUP_DIR=str(ROOT / ".data/local-postgres/backups"),
+    )
+else:
+    load_dotenv(ROOT / ".env")
+    load_dotenv(ROOT / "backend" / ".env")
 
 def project_path(value: str | None, default: str) -> Path:
     path = Path(value or default)
@@ -25,6 +54,10 @@ class Config:
     typesafe_key: str = os.getenv("TYPESAFE_API_KEY", "")
     typesafe_model: str = os.getenv("TYPESAFE_MODEL", "jev-1.13.0")
     discord_webhook: str = os.getenv("DISCORD_WEBHOOK_URL", "")
+    telegram_enabled: bool = os.getenv("TELEGRAM_ENABLED", "0") == "1"
+    telegram_bot_token: str = field(default=os.getenv("TELEGRAM_BOT_TOKEN", ""), repr=False)
+    telegram_owner_user_id: str = os.getenv("TELEGRAM_OWNER_USER_ID", "")
+    telegram_chat_id: str = os.getenv("TELEGRAM_CHAT_ID", "")
     production: bool = os.getenv("APP_ENV", "development") == "production"
     proxy_secret: str = os.getenv("BACKEND_PROXY_SECRET", "")
 

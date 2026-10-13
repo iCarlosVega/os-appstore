@@ -18,14 +18,16 @@ export default async function Page({ params }: { params: Promise<{ slug: string 
 
   return <article className="detail">
     <Link href="/">← All software</Link>
-    <div className="detail-heading">
-      <AppIcon repoId={app.repoId} name={app.name} large />
-      <div><h1>{app.name}</h1><p>By <a href={app.creatorUrl} rel="noopener noreferrer">{app.creator}</a></p></div>
+    <div className="detail-header">
+      <div className="detail-heading">
+        <AppIcon repoId={app.repoId} name={app.name} large />
+        <div><h1>{app.name}</h1><p>By <a href={app.creatorUrl} rel="noopener noreferrer">{app.creator}</a></p></div>
+      </div>
+      <DownloadMenu id={app.id} name={app.name} repoUrl={app.repoUrl} disabled={settings.downloadsPaused || !app.downloadsEnabled} />
     </div>
     <p className="intro">{app.description || fallback}</p>
     <div>{app.categories.map(c => <Link className="badge" key={c} href={`/?category=${c}`}>{cats.find(x => x.id === c)?.name || c}</Link>)}</div>
     {app.condition !== "active" && <p className="notice">{app.condition === "inactive" ? "This project has limited recent activity. It remains available in the catalog." : "Repository availability needs review. The last approved project link is shown below."}</p>}
-    <DownloadMenu id={app.id} name={app.name} repoUrl={app.repoUrl} disabled={settings.downloadsPaused || !app.downloadsEnabled} />
     <Suspense fallback={<section className="app-about"><h2>About this app</h2><p className="muted">Loading README…</p></section>}>
       <AppReadme repoUrl={app.repoUrl} description={app.description} />
     </Suspense>
