@@ -27,4 +27,5 @@ export type Dashboard = {
   usage: { period: string; ai: number; hosting: number; total: number; budget: number; configured: boolean };
   proposals: Record<string, unknown>[]; requests: Record<string, unknown>[]; jobs: Record<string, unknown>[];
   notifications: Record<string, unknown>[]; costEntries: Record<string, unknown>[];
+  communitySuggestions?: import("./community-types").CommunitySuggestion[];
 };

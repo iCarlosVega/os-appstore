@@ -1,0 +1,18 @@
+.request-page .request-form { text-align: left; margin-top: 1.5rem; }
+.request-page .request-form input { text-align: left; }
+.request-page .repository-picker { border-bottom: 1px solid var(--line); padding-bottom: 1rem; }
+.request-page .repository-picker > label, .request-page .request-fields legend { font-weight: 600; }
+.request-page .repository-picker > input { margin-top: .4rem; }
+.request-page .repository-results { padding: 0; margin: 0; list-style: none; display: grid; gap: .75rem; }
+.request-page .repository-result { padding: 1rem; border: 1px solid var(--line); border-radius: 6px; overflow-wrap: anywhere; }
+.request-page .repository-result h3 { margin: 0; font-size: 1rem; }
+.request-page .repository-result p { margin: .4rem 0; }
+.request-page .repository-actions { display: flex; flex-wrap: wrap; align-items: center; gap: .75rem; margin-top: .75rem; }
+.request-page .repository-actions button { white-space: normal; overflow-wrap: anywhere; }
+.request-page .request-fields { min-width: 0; margin: 1.2rem 0 0; padding: 0; border: 0; }
+.request-page .request-fields label { display: block; }
+.request-page .request-form [role="status"] { overflow-wrap: anywhere; }
+@media (max-width: 500px) {
+  .request-page .request-form { padding: 1rem; }
+  .request-page .repository-actions { align-items: stretch; flex-direction: column; }
+}
