@@ -8,7 +8,7 @@ from pydantic import BaseModel, ConfigDict, Field, AfterValidator, field_validat
 CATEGORY_NAMES = ["Productivity", "Development", "Creative Tools", "Privacy", "Utilities", "Communication", "Education", "AI", "Gaming"]
 PLATFORMS = ("Windows", "macOS", "Linux", "Android", "iOS", "Browser")
 TYPES = ("Desktop app", "Mobile app", "Game", "Command-line tool", "Browser extension", "Plugin", "Library", "Self-hosted service", "Web app")
-JOB_KINDS = ("discovery", "maintenance", "priority", "digest", "backup")
+JOB_KINDS = ("discovery", "maintenance", "priority", "digest", "backup", "community")
 
 class InputError(ValueError):
     pass
@@ -107,7 +107,7 @@ class Settings(Model):
     downloadsPaused: bool = False
     aiPaused: bool = True
     budgetPaused: bool = False
-    failedKinds: list[str] = Field(default_factory=list, max_length=5)
+    failedKinds: list[str] = Field(default_factory=list, max_length=6)
     timezone: str = "America/New_York"
     discoveryTime: Clock = "02:00"
     maintenanceTime: Clock = "03:00"

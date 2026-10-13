@@ -214,7 +214,7 @@ For the ordinary environment, use `npm run db:migrate`, configure the intended d
 
 Direct equivalents are `python -m app.telegram_worker [--once]` from `backend/` using its venv, or `backend/.venv/bin/python -m backend.app.telegram_worker [--once]` from the repository root. Direct local invocation also requires `STORE_LOCAL=1` and an absolute `STORE_ENV_FILE` pointing at this worktree's local file. `--once` may send real cards and process real approvals; it is not a dry run. API and discovery startup never starts Telegram. The existing Docker Compose definitions do not start this additional process; a future production deployment must explicitly provision a separate Telegram worker with its own production bot, database and `APP_URL`.
 
-Startup checks schema revision `0002_telegram_reviews`, required tables and initialized settings with read-only queries; it never initializes/migrates schema, and SQLite readiness cannot create a missing file. It verifies the bot with `getMe`, checks `getWebhookInfo`, and refuses a configured webhook with instructions to review/remove it deliberately. The worker never deletes webhooks or drops pending updates automatically. Missing lane modules/dependencies fail with an integration message.
+Startup accepts schema revision `0002_telegram_reviews` or additive `0003_community_requests`, checks required Telegram tables and initialized settings with read-only queries, and never initializes/migrates schema. SQLite readiness cannot create a missing file. It verifies the bot with `getMe`, checks `getWebhookInfo`, and refuses a configured webhook with instructions to review/remove it deliberately. The worker never deletes webhooks or drops pending updates automatically. Missing lane modules/dependencies fail with an integration message.
 
 Pending candidates, including the backlog, are delivered at most five new cards per iteration. Only the configured private owner/chat can use `/start`, `/help` and `/pending`; `/pending` uses the same bounded delivery budget. Each card names its environment and repository and shows listing facts, activity, unknown fields and assessment flags. Explicitly select a category, software type and free-use cost model, confirm non-NSFW content, review the current summary, then publish that exact draft or reject it. Suggestions require confirmation too. Only `Free` and `Free with optional paid features` qualify; known NSFW candidates remain blocked. Unknown optional facts are preserved. Reviews expire after seven days; refreshed candidates, edited drafts and stale confirmation buttons cannot publish an earlier snapshot. Approval uses the existing store validation/transaction and preserves manual overrides.
 
@@ -236,9 +236,61 @@ Timezone: **America/New_York**, editable in Settings.
 | Priority refresh | Daily, 03:00 |
 | Full metadata refresh | Sunday, 03:00 |
 | Backup | Daily, 03:30 |
+| Community suggestions | Monday, 00:05; cutoff 00:00 |
 | Discord digest | Monday, 09:00 |
 
 Discovery considers at most 100 repository URLs/run and adds at most 10 new candidates/day by default. Growth is unknown until a later star observation. Jobs use durable IDs, leases, and checkpoints; interrupted/paused runs survive midnight. Failed job kinds wait for owner resumption in Operations. Run only the Python worker after switching from the original TypeScript backend.
+
+## Community app suggestions
+
+Visitors can search public GitHub projects at `/request`, paste a repository URL, or submit an idea without a repository. Search uses GitHub best matches and shows at most ten results; stars do not determine weekly ranking. Backend verification supplies repository facts. Visitors may recommend their own projects using the same flow.
+
+The signed HttpOnly browser cookie lasts 180 days. One canonical numeric repository ID and one signed browser identifier count once, enforced by a database constraint. Stored contribution keys are pseudonymous HMACs, not raw cookies or IP addresses. Deleting cookies or using another device can count again; counts approximate browsers, not unique people. Idea-only and historical requests remain manual requests and create no votes.
+
+At Monday 00:05 in Settings' timezone, the job freezes up to 30 eligible repositories using contributions received strictly before Monday 00:00. Ranking uses cumulative browser counts, then earliest contribution and numeric repository ID. Up to ten become pending candidates; the backlog carries forward. This cap is independent of discovery's daily quota. A restart catches up the latest eligible closed week; previously frozen unfinished batches retain their order, counts and cap. Pauses and failures preserve progress. Operations exposes the `community` job for review/resumption; manual retries cannot reset a week's limit.
+
+Existing catalog entries and candidates, including rejected candidates, are excluded. Archived or unavailable repositories are skipped with bounded backfill; transient provider failures wait for resumption. Candidate creation, queue marking and checkpoint advance commit together under lease. Selection makes no AI calls, never publishes automatically and retains unknown metadata for owner review. The Telegram worker delivers the existing Open repo / Accept / Reject / More cards when online. Only an authorized owner approval publishes.
+
+Archived, missing or identity-changed suggestions retain their contributions but are deferred from later rankings using their durable skip audit. A newer server-verified, nonarchived submission makes the project eligible for revalidation; another archived submission does not. Expiry of the existing one-year audit retention also permits a later recheck. This prevents unavailable leaders from occupying all 30 evaluation slots every week while preserving the backlog and review history.
+
+Search caches provider facts for five minutes but refreshes store status on every response. Ten searches/lookups per address per minute and ten uncached provider operations per minute across backend processes limit GitHub usage. Submission keeps the existing five-attempt hourly address limit. Search failure still permits repository pasting and idea-only requests.
+
+### Community rollout and rollback
+
+The integration branch and disposable tests do not activate production. Release separately against the intended database:
+
+1. Confirm the target database, frontend/backend URLs and deployed revision privately. Stop API/jobs/Telegram for the migration window. Take `npm run backup` with that target's environment, copy the completed backup to independent storage, and test restore into a separate disposable database. Compare catalog, candidate/review, request and polling-offset records before proceeding. See [backup and restore](#backup-restore-rollback).
+2. Configure a stable `AUTH_SECRET` of at least 32 characters, a server-only `GITHUB_TOKEN`, matching frontend/backend `BACKEND_PROXY_SECRET`, frontend `BACKEND_URL` and backend `APP_URL`. Keep credentials out of `NEXT_PUBLIC_*`. Review existing settings, budget/discovery/publication pauses and failed kinds. Use a distinct Telegram bot for each database.
+3. Explicitly run `npm run db:migrate` in the intended ordinary backend environment. This adds `0003_community_requests` without converting historical requests into votes. PostgreSQL startup never silently migrates. Check the revision and existing records, then start API/frontend. For the existing guarded local environment, use `npm run local:db:migrate` only after verifying its local target; parallel worker worktrees must not run it.
+4. Start one jobs worker with `npm run jobs` and one configured bot poller with `npm run telegram`. API startup does not start either. Telegram must be configured/enabled deliberately. Verify the configured timezone and next Monday 00:05, the dated `community:<closed-week-Monday>` job after it becomes due, and its checkpoint, candidate count and queue state. Catch-up may run immediately after deployment when a closed week is eligible.
+5. Verify search, selection, duplicate submission, signed cookie retention and owner-visible counts. Confirm candidates are absent from the public catalog until owner acceptance, and verify delivery/approval with the intended bot as a separate authorized live check. A missing GitHub token, discovery/budget/publication pause or failed community kind prevents processing; AI pause alone does not.
+
+To halt selection, set `discoveryPaused` (also pauses automated discovery), stop the jobs worker, or pause publication as appropriate. Stop the bot before recovery. Retain suggestion/contribution/review history: migration 0003 deliberately refuses destructive downgrade. Prefer a compatible application rollback that still understands 0003 and Telegram readiness. If database recovery is necessary, restore the verified backup into a new database, review records and switch all API/jobs/bot connections together. Keep the old database for investigation; never run writers or the same bot against both databases.
+
+### Repeatable isolated verification
+
+Requires installed dependencies, Docker and a locally available `postgres:17` image. The backend suite creates/removes dedicated temporary SQLite and PostgreSQL databases, guards destinations and mocks provider HTTP:
+
+```sh
+backend/.venv/bin/python -m unittest discover -s backend/tests -v
+node scripts/verify-community-ui.mjs
+npm run typecheck
+npm run build
+```
+
+For the real Next proxy and browser smoke, build first, then use two terminals in an isolated checkout with no environment files:
+
+```sh
+backend/.venv/bin/python -m backend.tests.test_community_integration --serve-fixture
+```
+
+```sh
+env -i PATH="$PATH" NODE_ENV=production NEXT_TELEMETRY_DISABLED=1 \
+  BACKEND_URL=http://127.0.0.1:3184 BACKEND_PROXY_SECRET=synthetic-proxy \
+  node node_modules/next/dist/bin/next start --hostname 127.0.0.1 --port 3183
+```
+
+Then run `backend/.venv/bin/python -m backend.tests.test_community_integration --verify-proxy` once against the fresh fixture and open `http://127.0.0.1:3183/request` for keyboard/mobile checks. These fixed loopback ports must be free. The real API fixture uses only temporary SQLite, synthetic GitHub/Telegram HTTP and synthetic credentials. Restart it for a fresh count/rate-limit state. Stop both processes with Ctrl+C afterward. It never starts jobs or a live Telegram poller. Keep the browser on this fixture for test submissions.
 
 ## Spending controls
 
@@ -305,7 +357,7 @@ npm run typecheck
 npm run build
 ```
 
-No application tests were added/run under the current session instruction. Compilation/import checks do not prove endpoint or live integration correctness. The development environment blocks network listeners, browser access, Docker, and registry DNS; dependencies were provisioned from available local distributions.
+The community integration gate exercises real migrated PostgreSQL/SQLite state and mocked GitHub/Telegram transports, including submission through owner acceptance, cutoff/frozen ranking, rollback, leases and existing review preservation. Separate Next proxy verification checks the signed-cookie roundtrip. These tests do not establish live provider behavior, production capacity or deployed configuration; use the rollout checks above for the intended release.
 
 Search initially matches the published catalog in memory, returns up to 100 results, and ranks at most 20 candidates with Jev. Add indexed database retrieval and pagination when the collection grows. Download clicks count button activations, not completed installations or unique users. Metadata extraction is conservative and needs owner review. No public accounts, reviews, ratings, binary mirroring, installation, or malware scanning are included.
 
