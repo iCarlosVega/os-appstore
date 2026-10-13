@@ -11,7 +11,7 @@ from fastapi.responses import JSONResponse, RedirectResponse
 from pydantic import BaseModel, ValidationError
 from starlette.concurrency import run_in_threadpool
 from starlette.exceptions import HTTPException as StarletteHTTPException
-from . import admin, auth, budget, db, search, store
+from . import admin, auth, budget, community_github, db, search, store
 from .config import config
 from .models import AdminAction, AppRequest, DownloadRequest, InputError, repository_url
 
@@ -23,6 +23,7 @@ async def lifespan(_app):
     yield
 
 app = FastAPI(title="Free Software Store API", version="0.2.0", lifespan=lifespan, docs_url="/docs", redoc_url=None)
+app.include_router(community_github.router)
 
 class BodyLimitMiddleware:
     def __init__(self, app):
